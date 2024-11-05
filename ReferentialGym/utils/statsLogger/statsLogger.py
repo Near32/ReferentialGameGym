@@ -160,6 +160,8 @@ class statsLogger(SummaryWriter):
             else:
                 if isinstance(x, torch.Tensor): x = x.cpu().detach().numpy()
                 rec.append((idx,x))
+            #if isinstance(x, torch.Tensor): 
+            #    print(f"STATLOGGER: tensor {x.shape} of {x.dtype}")
             
             return rec
 

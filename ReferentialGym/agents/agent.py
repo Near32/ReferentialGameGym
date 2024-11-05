@@ -71,7 +71,8 @@ def wandb_logging_hook(
     global_it = input_streams_dict['global_it_comm_round']
     mode = input_streams_dict['mode']
 
-    if global_it % 1024 != 0:    return
+    if not agent.kwargs.get('wandb_logging', False) :   return
+    if global_it % agent.kwargs['wandb_logging_rg_period'] != 0:    return
     
     idx2w = agent.idx2w
 
@@ -306,6 +307,12 @@ class Agent(Module):
         pass 
     
     def _log(self, log_dict, batch_size, it_rep=0):
+        '''
+        DEPRECATED: no longer logging due to the impact on CPU RAM.
+        '''
+        self.log_idx +=1
+        return
+        ## PREVIOUSLY:
         if self.logger is None: 
             return 
 
@@ -316,7 +323,11 @@ class Agent(Module):
                 data = [None]*batch_size
             agent_log_dict[entry_id].update({f"{key}":data})
         
-        self.logger.add_dict(agent_log_dict, batch=True, idx=self.log_idx) 
+        #WARNING: the following line was causing CPU RAM OOM:
+        # It contained sentences_logits and sentences_hidden_states vectors
+        # which are massive with LLMs due to large vocab_size and long context length.
+        # self.logger.add_dict(agent_log_dict, batch=True, idx=self.log_idx) 
+        #wandb.log(agent_log_dict.update({'log_idx':self.log_idx}), commit=False) 
         
         self.log_idx += 1
 
@@ -458,6 +469,8 @@ class Agent(Module):
         
         # Logging:        
         for logname, value in self.log_dict.items():
+            if isinstance(value, torch.tensor):
+                print(f"AGENT COMPUTE LOGGING: tensor {value.shape}.")
             self.logger.add_scalar(f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/{self.role}/{logname}", value.item(), global_it_comm_round)
         self.log_dict = {}
 
@@ -544,6 +557,8 @@ class Agent(Module):
         
         # Logging:        
         for logname, value in self.log_dict.items():
+            if isinstance(value, torch.tensor):
+                print(f"AGENT LOGGING: tensor {value.shape}.")
             self.logger.add_scalar(f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/{self.role}/{logname}", value.item(), global_it_comm_round)
         self.log_dict = {}
 

@@ -338,7 +338,7 @@ def discriminative_obverter_referential_game_loss(
     mode = input_streams_dict.get("mode", 'train')
 
     batch_size = len(input_streams_dict["experiences"])
-    nbr_distractors_po = input_streams_dict["experiences"].shape[2]
+    nbr_distractors_po = input_streams_dict["experiences"].shape[1]
 
     sample = input_streams_dict["sample"]
             
@@ -448,7 +448,7 @@ def discriminative_obverter_referential_game_loss(
         if config["descriptive"]:
             final_decision_logits = final_decision_logits.reshape((batch_size, nbr_distractors_po, -1))
             if nbr_distractors_po == 1:
-                eff_final_decision_logits = final_decision_logits.squeeze()
+                eff_final_decision_logits = final_decision_logits.squeeze(1)
                 # (batch_size, 2)
                 decision_logits = eff_final_decision_logits.log_softmax(dim=-1)
                 # (batch_size, 2)
@@ -547,7 +547,7 @@ def discriminative_obverter_referential_game_loss(
             final_decision_logits = final_decision_logits.reshape((batch_size, nbr_distractors_po, -1))
             if nbr_distractors_po == 1:
                 #raise NotImplementedError("This is unlikely. It must either have distractors or be descriptive.")
-                final_decision_logits = final_decision_logits.squeeze()
+                final_decision_logits = final_decision_logits.squeeze(1)
                 # (batch_size, 2)
             else:
                 # (batch_size, (nbr_distractors+1), 2)

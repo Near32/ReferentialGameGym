@@ -214,8 +214,8 @@ class PerEpochLoggerModule(Module):
           if value is None: continue
           if isinstance(value, torch.Tensor): 
               value = value.mean().item()
-          logger.add_scalar(key, value, global_it_step)
-          #wandb.log({key: value}, commit=False)
+          #TODO: test if issue is here logger.add_scalar(key, value, global_it_step)
+          wandb.log({key: value}, commit=False)
 
         logger.flush()
         wandb.log({}, commit=True)

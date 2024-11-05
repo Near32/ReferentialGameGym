@@ -5,6 +5,7 @@ import random
 import time
 import cloudpickle 
 import glob
+import gc
 
 import torch
 import torch.nn as nn
@@ -56,7 +57,7 @@ class RunningMeanStd(object):
             bdata = torch.stack(bdata, dim=0)
 
         bmean = torch.mean(bdata, dim=0)
-        bstd = torch.std(bdata, dim=0)
+        bstd = torch.std(bdata, dim=0) if bdata.shape[0]>1 else self.std
         bcount = len(bdata)
         
         if self.count == 0:
@@ -463,6 +464,10 @@ class ReferentialGame(object):
             self.stream_handler.update("signals:epoch", epoch)
             pbar.update(1)
             for it_dataset, (mode, data_loader) in enumerate(data_loaders.items()):
+                ## Enabled/Disable GRAD :
+                was_grad_enabled = torch.is_grad_enabled()
+                torch.set_grad_enabled('train' in mode)
+                ##
                 self.stream_handler.update("current_dataset:ref", self.datasets[mode])
                 self.stream_handler.update("signals:mode", mode)
                 
@@ -485,8 +490,9 @@ class ReferentialGame(object):
                     it = it_datasample
 
 
-                    if self.config['use_cuda']:
-                        sample = sample.cuda()
+                    #TODO: maybe it is best to not put element on cuda from start but rather only when needed:
+                    #if self.config['use_cuda']:
+                    #    sample = sample.cuda()
 
                     # //------------------------------------------------------------//
                     # //------------------------------------------------------------//
@@ -537,17 +543,17 @@ class ReferentialGame(object):
                             batched_loss = sum([l for l in losses.values()]).detach().cpu().numpy()
                             self.pbss[mode].update_batch(batched_loss)
 
-                        loss = sum( [l.mean() for l in losses.values()])
+                        loss = sum( [l.mean().detach().cpu().numpy() for l in losses.values()])
                         logs_dict = self.stream_handler["logs_dict"]
                         acc_keys = [k for k in logs_dict.keys() if '/referential_game_accuracy' in k]
                         if len(acc_keys):
-                            acc = logs_dict[acc_keys[-1]].mean()
+                            acc = logs_dict[acc_keys[-1]].mean().detach().cpu().numpy()
 
                         for ak in acc_keys:
                             if mode not in self.accuracy_rms: 
                                 assert mode in ak
                                 self.accuracy_rms[mode] = RunningMeanStd()
-                            self.accuracy_rms[mode].update(logs_dict[ak])
+                            self.accuracy_rms[mode].update(logs_dict[ak].cpu().detach())
                             rms_acc = self.accuracy_rms[mode].mean.mean().item()
                             rms_acc_std = self.accuracy_rms[mode].std.mean().item()
                             logger.add_scalar( "RunningAccuracy/{}/Mean".format(mode), rms_acc, it_step)
@@ -558,7 +564,7 @@ class ReferentialGame(object):
 
                         if verbose_period is not None and idx_stimulus % verbose_period == 0:
                             descr = f"GPU{os.environ.get('CUDA_VISIBLE_DEVICES', None)}-Epoch {epoch+1} :: {mode} Iteration {idx_stimulus+1}/{len(data_loader)}"
-                            if isinstance(loss, torch.Tensor): loss = loss.item()
+                            if isinstance(loss, torch.Tensor): loss = loss.detach().cpu().item()
                             descr += f" (Rep:{it_rep+1}/{nbr_experience_repetition}):: Loss {it+1} = {loss:4f} //"
                             descr += f" Run. {mode} Acc.: {self.accuracy_rms[mode].mean.mean().item():2f} % //"
                             pbar.set_description_str(descr)
@@ -640,7 +646,15 @@ class ReferentialGame(object):
                                 if 'test' in mode:  continue
                                 self.datasets[mode].setNbrDistractors(self.datasets[mode].getNbrDistractors(mode=mode)+1, mode=mode)
                     # //------------------------------------------------------------//
-
+                    #time complexity: 0.2secs :
+                    gc.collect()
+                    #time complexity: 0.05-0.4secs :
+                    torch.cuda.empty_cache()
+                
+                ## RESET GRAD USAGE:
+                torch.set_grad_enabled(was_grad_enabled)
+                ##
+                
                 if logger is not None:
                     logger.switch_epoch()
                     
@@ -664,6 +678,7 @@ class ReferentialGame(object):
         
         # Making sure data_loaders and their workers are garbage collected:
         del data_loaders
+        gc.collect()
 
         # //------------------------------------------------------------//
         # //------------------------------------------------------------//

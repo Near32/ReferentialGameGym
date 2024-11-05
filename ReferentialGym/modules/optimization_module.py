@@ -6,6 +6,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim 
+from torch.cuda.amp import GradScaler
 
 from .module import Module
 from ..networks import handle_nan, l1_reg, l2_reg
@@ -73,15 +74,45 @@ class OptimizationModule(Module):
                                                  input_stream_ids=input_stream_ids)
         self.update_count = 0
         parameters = []
+        trainable_parameters = []
         for k,m in self.config["modules"].items():
             #parameters += m.parameters()
             for name, param in m.named_parameters():
                 parameters += [param]
-                print((name, param.shape))
+                if param.requires_grad:
+                    trainable_parameters += [param]
+                    print((name, param.shape))
             print(f"Module {k} of type {type(m)} : {len(list(m.parameters()))} params.")
+        nbr_trainable_params = sum([param.numel() for param in trainable_parameters])
+        nbr_params = sum([param.numel() for param in parameters])
+        print(f"Total trainable params: {nbr_trainable_params} || all params: {nbr_params} || trainable%: {100 * nbr_trainable_params / nbr_params}"
+        )
+
+        self.accelerator = self.config.get('accelerator', None)
 
         if "sgd" in self.config["optimizer_type"].lower():
             self.optimizer = optim.SGD(
+                parameters, 
+                lr=self.config["learning_rate"],
+                weight_decay=self.config["weight_decay"],
+            )
+        elif "adam8bit" in self.config["optimizer_type"].lower():
+            import bitsandbytes as bnb
+            self.optimizer = bnb.optim.Adam8bit(
+                parameters, 
+                lr=self.config["learning_rate"],
+                weight_decay=self.config["weight_decay"],
+            )
+        elif "adamW8bit" in self.config["optimizer_type"].lower():
+            import bitsandbytes as bnb
+            import ipdb; ipdb.set_trace()
+            self.optimizer = bnb.optim.AdamW8bit(
+                parameters, 
+                lr=self.config["learning_rate"],
+                weight_decay=self.config["weight_decay"],
+            )
+        elif "adamW" in self.config["optimizer_type"].lower():
+            self.optimizer = optim.AdamW(
                 parameters, 
                 lr=self.config["learning_rate"],
                 weight_decay=self.config["weight_decay"],
@@ -94,6 +125,12 @@ class OptimizationModule(Module):
                 weight_decay=self.config["weight_decay"],
                 eps=self.config["adam_eps"],
             )
+
+        if self.accelerator:
+            self.optimizer = self.accelerator.prepare(self.optimizer)
+        
+        if 'fsdp' in self.config['multi_gpu_strategy']:
+            self.scaler = GradScaler()
 
     def save(self, path):
       torch.save(self.optimizer.state_dict(), os.path.join(path, self.id+".module"))
@@ -138,8 +175,14 @@ class OptimizationModule(Module):
                     and p.min() != 0 :
                         #print(k, p.shape)
                         m.zero_grad(set_to_none=True)
+            loss /= self.config.get('gradient_accumulation_steps', 1)
             if self.config.get("optimize", True):
-                loss.backward()
+                if self.accelerator:
+                    self.accelerator.backward(loss)
+                elif 'fsdp' in self.config['multi_gpu_strategy']:
+                    self.scaler.scale(loss).backward()
+                else:
+                    loss.backward()
             
             if self.config["l1_reg_lambda"] > 0.0:
                 l1_regularization = {}
@@ -166,11 +209,16 @@ class OptimizationModule(Module):
                 logs_dict[f"{mode}/L2_regularization/loss"] = l2_regularization.item()
                 logs_dict[f"{mode}/L2_regularization/lambda"] = self.config["l2_reg_lambda"]
             
-            if self.config.get("optimize", True):
-                self.optimizer.step()
+            if self.config.get("optimize", True) \
+            and self.update_count % self.config.get('gradient_accumulation_steps', 1) == 0:
+                if 'fsdp' in self.config['multi_gpu_strategy']:
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    self.optimizer.step()
             self.update_count += 1
 
-        logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/Loss"] = loss
+        logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/Loss"] = loss.detach().cpu()
         
         outputs_stream_dict['signals:update_count'] = self.update_count
         
