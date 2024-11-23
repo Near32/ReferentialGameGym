@@ -21,6 +21,7 @@ def havrylov_hinge_learning_signal(
     sampled_decision_idx=None, 
     multi_round=False,
 ):
+    target_decision_idx = target_decision_idx.to(decision_logits.device)
     target_decision_logits = decision_logits.gather(dim=1, index=target_decision_idx)
     # (batch_size, 1)
 
@@ -283,7 +284,7 @@ def discriminative_st_gs_referential_game_loss(agent,
         # (batch_size, )
         
         decision_logits = final_decision_logits
-        decision_probs = decision_logits.softmax(dim=-1)
+        decision_probs = decision_logits.softmax(dim=-1).cpu()
         
         losses_dict[f"repetition{it_rep}/comm_round{it_comm_round}/referential_game_loss"] = [1.0, loss]    
         outputs_dict["decision_probs"] = decision_probs

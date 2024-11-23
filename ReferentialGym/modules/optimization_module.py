@@ -129,7 +129,7 @@ class OptimizationModule(Module):
         if self.accelerator:
             self.optimizer = self.accelerator.prepare(self.optimizer)
         
-        if 'fsdp' in self.config['multi_gpu_strategy']:
+        if 'fsdp' in self.config.get('multi_gpu_strategy', ''):
             self.scaler = GradScaler()
 
     def save(self, path):
@@ -179,7 +179,7 @@ class OptimizationModule(Module):
             if self.config.get("optimize", True):
                 if self.accelerator:
                     self.accelerator.backward(loss)
-                elif 'fsdp' in self.config['multi_gpu_strategy']:
+                elif 'fsdp' in self.config.get('multi_gpu_strategy', ''):
                     self.scaler.scale(loss).backward()
                 else:
                     loss.backward()
@@ -211,7 +211,7 @@ class OptimizationModule(Module):
             
             if self.config.get("optimize", True) \
             and self.update_count % self.config.get('gradient_accumulation_steps', 1) == 0:
-                if 'fsdp' in self.config['multi_gpu_strategy']:
+                if 'fsdp' in self.config.get('multi_gpu_strategy', ''):
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                 else:

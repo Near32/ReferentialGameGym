@@ -210,6 +210,8 @@ class RNNCNNListener(DiscriminativeListener):
         features = []
         total_size = experiences.size(0)
         mini_batch_size = min(self.kwargs['cnn_encoder_mini_batch_size'], total_size)
+        if self.kwargs['use_cuda']:
+            experiences = experiences.cuda()
         for stin in torch.split(experiences, split_size_or_sections=mini_batch_size, dim=0):
             if isinstance(self.cnn_encoder, BetaVAE):
                 cnn_output_dict  = self.cnn_encoder.compute_loss(stin)
