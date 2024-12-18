@@ -10,7 +10,11 @@ import math
 import sklearn 
 from functools import partial 
 import cv2 as cv
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib.pyplot as plt
+except Exception as e:
+    print(e)
 
 import wandb 
 

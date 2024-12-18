@@ -9,7 +9,11 @@ import random
 import cv2
 from PIL import Image 
 
-import matplotlib.pyplot as plt 
+try:
+    import matplotlib.pyplot as plt 
+except Exception as e:
+    print(e)
+
 from tqdm import tqdm
 
 # Reproducing: 
