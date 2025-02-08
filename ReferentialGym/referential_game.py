@@ -491,8 +491,8 @@ class ReferentialGame(object):
 
 
                     #TODO: maybe it is best to not put element on cuda from start but rather only when needed:
-                    #if self.config['use_cuda']:
-                    #    sample = sample.cuda()
+                    if self.config['use_cuda']:
+                        sample = sample.cuda()
 
                     # //------------------------------------------------------------//
                     # //------------------------------------------------------------//

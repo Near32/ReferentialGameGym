@@ -347,7 +347,9 @@ class SymbolicContinuousStimulusDataset(Dataset) :
             return self.dataset_length
         return len(self.indices)
     
-
+    def size(self) -> int:
+        return len(self)
+    
     def getclass(self, idx, from_traintest=False):
         if from_traintest:
             indices = self.traintest_indices
@@ -473,6 +475,9 @@ class SymbolicContinuousStimulusDataset(Dataset) :
         """
         if idx >= len(self.indices):
             idx = idx%len(self.indices)
+        
+        #TODO: it may be coming from traintest_indices, need to figure that out:
+        trueidx = self.indices[idx]
 
         latent_class = self.getlatentclass(idx)
         stimulus = torch.from_numpy(
@@ -481,13 +486,13 @@ class SymbolicContinuousStimulusDataset(Dataset) :
                         (1,-1)
                     )
                 )
-        ).float()
-        latent_class = torch.from_numpy(latent_class)
+        ).to(dtype=torch.float32)
+        latent_class = torch.from_numpy(latent_class).to(dtype=torch.float32)
 
-        target = self.getclass(idx)
-        latent_value = torch.from_numpy(self.getlatentvalue(idx))
-        latent_one_hot_encoded = torch.from_numpy(self.getlatentonehot(idx))
-        test_latents_mask = torch.from_numpy(self.gettestlatentmask(idx))
+        target = torch.Tensor([self.getclass(idx)]).to(dtype=torch.float32)
+        latent_value = torch.from_numpy(self.getlatentvalue(idx)).to(dtype=torch.float32)
+        latent_one_hot_encoded = torch.from_numpy(self.getlatentonehot(idx)).to(dtype=torch.float32)
+        test_latents_mask = torch.from_numpy(self.gettestlatentmask(idx)).to(dtype=torch.float32)
 
         if self.transform is not None:
             stimulus = self.transform(stimulus)
@@ -499,6 +504,7 @@ class SymbolicContinuousStimulusDataset(Dataset) :
             "exp_latents_values":latent_value,
             "exp_latents_one_hot_encoded":latent_one_hot_encoded,
             "exp_test_latents_masks":test_latents_mask,
+            "exp_indices": trueidx,
         }
 
         return sampled_d

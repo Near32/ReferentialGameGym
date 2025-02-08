@@ -74,6 +74,39 @@ class GaussianBlur:
         x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
         return x
 
+class SplitImg:
+    def __init__(
+        self, 
+        transform,
+        input_channel_dim=-1,
+        transform_channel_dim=-1,
+        output_channel_dim=None,
+    ):
+        self.transform = transform
+        self.input_channel_dim = input_channel_dim
+        self.transform_channel_dim = transform_channel_dim
+        if output_channel_dim is None:
+            output_channel_dim = input_channel_dim
+        self.output_channel_dim = output_channel_dim
+        
+    def __call__(self, x):
+        assert len(x.shape)==3
+        if self.input_channel_dim!=self.transform_channel_dim:
+            x = x.transpose(self.transform_channel_dim,self.input_channel_dim)
+        xis = []
+        for xi in x.split(split_size=3,dim=self.transform_channel_dim):
+            tcdim = self.transform_channel_dim
+            out = self.transform(xi)
+            if not isinstance(out, torch.Tensor):
+                out = T.ToTensor()(out)
+                tcdim = 0
+            if tcdim!=self.output_channel_dim:
+                out = out.transpose(self.transform_channel_dim,self.output_channel_dim)
+            xis.append(out)
+        xis = torch.cat(xis, dim=self.output_channel_dim)
+        return xis
+
+
 
 from ReferentialGym.modules import Module 
 
@@ -244,8 +277,23 @@ def make_VAE(agent_config, args, rg_config):
   return agent_config 
 
 def reg_bool(string):
-    value = True if "Tr" in string else False
+    value = True if "True" in string else False
     return value
+
+def str2bool(instr):
+    if isinstance(instr, bool):
+        return instr
+    if isinstance(instr, str):
+        instr = instr.lower()
+        if 'true' in instr:
+            return True
+        elif 'false' in instr:
+            return False
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
+
 
 def default_cppf_fn(name):
     return True
@@ -430,7 +478,7 @@ def main():
   parser.add_argument("--use_object_centric_curriculum", type=reg_bool, default="False")
   parser.add_argument("--object_centric_curriculum_update_epoch_period", type=int, default=1)
   parser.add_argument("--object_centric_curriculum_accuracy_threshold", type=float, default=0.0)
-  parser.add_argument("--descriptive_version", type=int, default=1)
+  parser.add_argument("--descriptive_version", type=int, default=2)
   parser.add_argument("--distractors_sampling_scheme_version", type=int, default=1)
   parser.add_argument("--distractors_sampling_scheme_with_replacement", type=reg_bool, default="True")
   parser.add_argument("--with_color_jitter_augmentation", type=reg_bool, default="False")
@@ -438,9 +486,14 @@ def main():
   parser.add_argument("--egocentric", type=reg_bool, default="False")
   parser.add_argument("--egocentric_tr_degrees", type=int, default=45)
   parser.add_argument("--egocentric_tr_xy", type=float, default=0.125)
+  parser.add_argument("--color_jitter_prob", type=float, default=0.0)
+  parser.add_argument("--gaussian_blur_prob", type=float, default=0.0)
+  parser.add_argument("--egocentric_prob", type=float, default=0.0)
   parser.add_argument("--with_logits_mdl_principle", type=reg_bool, default="False")
-  parser.add_argument("--logits_mdl_principle_factor", type=float, default=1.0)
-  parser.add_argument("--logits_mdl_principle_accuracy_threshold", type=float, help='in percent', default=20)
+  parser.add_argument("--logits_mdl_principle_normalization", type=str2bool, default=False)
+  parser.add_argument("--logits_mdl_principle_use_inst_accuracy", type=str2bool, default=False)
+  parser.add_argument("--logits_mdl_principle_factor", type=float, default=0.0)#1.0e-3)
+  parser.add_argument("--logits_mdl_principle_accuracy_threshold", type=float, help='in percent.', default=10.0)
   parser.add_argument("--distractor_sampling", type=str,
     choices=[ "uniform",
               "similarity-0.98",
@@ -573,6 +626,11 @@ def main():
   
   #if 'EncoderOnly' not in args.arch:
   #    args.epoch = 11 
+  
+  if args.logits_mdl_principle_factor > 0.0:
+      args.with_logits_mdl_principle = True
+  else:
+      args.with_logits_mdl_principle = False
 
   if args.use_object_centric_curriculum:
       args.object_centric = True 
@@ -624,7 +682,7 @@ def main():
   torch.manual_seed(seed)
   if hasattr(torch.backends, "cudnn") and not(args.fast):
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.benchmark = True #False
 
   np.random.seed(seed)
   random.seed(seed)
@@ -635,14 +693,14 @@ def main():
   cnn_feature_size = -1 #600 #128 #256 #
   # Except for VAEs...!
   
-  stimulus_resize_dim = args.resizeDim #64 #28
+  stimulus_resize_dim = args.resizeDim if args.resizeDim != -1 else args.scs_nbr_latents #64 #28
   
   normalize_rgb_values = False 
   
   transformations = []
   rgb_scaler = 1.0 #255.0
   from ReferentialGym.datasets.utils import ResizeNormalize
-  if stimulus_resize_dim != "None":
+  if args.resizeDim != -1:
     transform = ResizeNormalize(
       size=stimulus_resize_dim, 
       normalize_rgb_values=normalize_rgb_values,
@@ -651,6 +709,11 @@ def main():
     )
     transformations.append(transform)
   
+  if args.color_jitter_prob > 0.0:
+    args.with_color_jitter_augmentation = True
+  else:
+    args.with_color_jitter_augmentation = False
+
   if args.with_color_jitter_augmentation:
     transformations = [T.RandomApply([T.ColorJitter(
         brightness=0.8,
@@ -658,10 +721,15 @@ def main():
         saturation=0.8,
         hue=0.1,
         )
-    ], p=0.8)]+transformations
+    ], p=args.color_jitter_prob)]+transformations
+
+  if args.gaussian_blur_prob > 0.0:
+    args.with_gaussian_blur_augmentation = True
+  else:
+    args.with_gaussian_blur_augmentation = False
 
   if args.with_gaussian_blur_augmentation:
-    transformations = [T.RandomApply([GaussianBlur([0.1,2.0])], p=0.5)]+transformations
+    transformations = [T.RandomApply([GaussianBlur([0.1,2.0])], p=args.gaussian_blur_prob)]+transformations
 
   from ReferentialGym.datasets.utils import AddEgocentricInvariance
   ego_inv_transform = AddEgocentricInvariance()
@@ -669,7 +737,13 @@ def main():
   transform_degrees = args.egocentric_tr_degrees
   transform_translate = (args.egocentric_tr_xy, args.egocentric_tr_xy)
   
+  if args.egocentric_prob > 0.0:
+    args.egocentric = True
+  else:
+    args.egocentric = False 
+
   if args.egocentric:
+    '''
     transformations = [
         ego_inv_transform,
         T.RandomAffine(degrees=transform_degrees, 
@@ -678,6 +752,35 @@ def main():
                      shear=None, 
                      interpolation=T.InterpolationMode.BILINEAR, 
                      fill=0),
+        *transformations,
+    ]
+    '''
+    split_img_ego_tr = SplitImg(
+        ego_inv_transform,
+        input_channel_dim=0,
+        transform_channel_dim=-1,
+        output_channel_dim=0,
+    )
+    affine_tr = T.RandomAffine(
+        degrees=transform_degrees, 
+        translate=transform_translate, 
+        scale=None, 
+        shear=None, 
+        interpolation=T.InterpolationMode.BILINEAR, 
+        fill=0,
+    )
+    split_img_affine_tr = SplitImg(
+        affine_tr,
+        input_channel_dim=0,
+        transform_channel_dim=0,
+        output_channel_dim=0,
+    )
+    rand_split_img_ego_affine_tr = T.RandomApply(
+        [split_img_ego_tr, split_img_affine_tr],
+        p=args.egocentric_prob,
+    )
+    transformations = [
+        rand_split_img_ego_affine_tr,
         *transformations,
     ]
   
@@ -712,7 +815,7 @@ def main():
 
   cultural_pressure_param_filtering_fn = default_cppf_fn
   if "language-model-only" in args.cultural_pressure_parameter_filtering_scheme:
-    print("WARNING: META LEARNING LANGUAGE MODEL ONLY.")
+    print("WARNING: CULTURAL PRESSURE/META LEARNING LANGUAGE MODEL ONLY.")
     cultural_pressure_param_filtering_fn = language_only_cppf_fn
     
 
@@ -803,8 +906,10 @@ def main():
       "entropy_regularization_factor":    -1e-2,
 
       "with_logits_mdl_principle":       args.with_logits_mdl_principle,
-      "logits_mdl_principle_factor":       float(args.logits_mdl_principle_factor),
-      "logits_mdl_principle_accuracy_threshold":       float(args.logits_mdl_principle_accuracy_threshold),
+      "logits_mdl_principle_normalization":     args.logits_mdl_principle_normalization,
+      "logits_mdl_principle_use_inst_accuracy":     args.logits_mdl_principle_use_inst_accuracy,
+      "logits_mdl_principle_factor":       args.logits_mdl_principle_factor,
+      "logits_mdl_principle_accuracy_threshold":       args.logits_mdl_principle_accuracy_threshold,
       "with_mdl_principle":       False,
       "mdl_principle_factor":     5e-2,
 
@@ -850,12 +955,14 @@ def main():
       agent_config["cnn_encoder_channels"] = [32,64,128]
     
     if "3x3" in agent_config["architecture"]:
-      agent_config["cnn_encoder_kernels"] = [3,3,3]
-    elif "7x4x4x3" in agent_config["architecture"]:
-      agent_config["cnn_encoder_kernels"] = [7,4,3]
+        agent_config["cnn_encoder_kernels"] = [3,3,3]
+        agent_config["cnn_encoder_strides"] = [2,2,2]
+    elif "7x4x3" in agent_config["architecture"]:
+        agent_config["cnn_encoder_kernels"] = [7,4,3]
+        agent_config["cnn_encoder_strides"] = [4,2,1]
     else:
-      agent_config["cnn_encoder_kernels"] = [4,4,4]
-    agent_config["cnn_encoder_strides"] = [2,2,2]
+        agent_config["cnn_encoder_kernels"] = [4,4,4]
+        agent_config["cnn_encoder_strides"] = [2,2,2]
     agent_config["cnn_encoder_paddings"] = [1,1,1]
     agent_config["cnn_encoder_fc_hidden_units"] = []#[128,] 
     # the last FC layer is provided by the cnn_encoder_feature_dim parameter below...
@@ -1078,7 +1185,8 @@ def main():
     agent_config["symbol_processing_nbr_rnn_layers"] = 1
   
   elif "BetaVAE" in agent_config["architecture"]:
-    make_VAE(agent_config, args, rg_config)
+      #TODO: check VAE hyperparams:
+      make_VAE(agent_config, args, rg_config)
   elif "MLP" in agent_config["architecture"]:
     if "BN" in args.arch:
       agent_config["hidden_units"] = ["BN256","BN256",256]
@@ -1626,6 +1734,7 @@ def main():
       config=obverter_sampling_config,
     )
   
+  #TODO: regularise to clearly state which module must be loaded:
   if args.use_aita:
     modules[aita_id] = rg_modules.AITAModule(
       id=aita_id,
@@ -1638,7 +1747,8 @@ def main():
       id=aitao_id,
       config=aitao_config,
     )
- 
+  # END TODO
+
   if args.use_object_centric_curriculum:
     modules[occ_id] = rg_modules.OCCModule(
       id=occ_id,
@@ -1870,6 +1980,7 @@ def main():
       mhcm_config['grouped_accuracies']["overall_latents"] = group_keys
   
     # Baseline:
+    #TODO: apparently this needs an update but not sure how?
     if args.with_baseline:
         raise NotImplementedError
 
@@ -1878,6 +1989,7 @@ def main():
         id=baseline_vm_id, 
         config=baseline_vm_config,
         input_stream_ids=baselien_vm_input_stream_ids)
+    # END TODO
 
     if args.with_classification_test_from_utterances:
       modules[lm_id] = rg_modules.build_LanguageModule(
@@ -1936,6 +2048,7 @@ def main():
     "optimizer_type":args.optimizer_type,
     "with_gradient_clip":rg_config["with_gradient_clip"],
     "adam_eps":rg_config["adam_eps"],
+    "optimize": True,
   }
 
   optim_module = rg_modules.build_OptimizationModule(
@@ -2250,6 +2363,16 @@ def main():
       },
     )
     modules[jaccard_sim_metric_id] = jaccard_sim_metric_module
+    
+    language_dynamic_metric_id = f"language_dynamic_metric"
+    language_dynamic_metric_module = rg_modules.LanguageDynamicMetricModule(
+        id=language_dynamic_metric_id,
+        config = {
+            "epoch_period":1,
+            "filtering_fn":(lambda input_streams_dict: input_streams_dict['mode']=='test'), # ONLY COMPUTE OVER TEST STIMULI
+        },
+    )
+    modules[language_dynamic_metric_id] = language_dynamic_metric_module
     
     inst_coord_metric_id = f"inst_coord_metric"
     inst_coord_input_stream_ids = {
@@ -2665,8 +2788,6 @@ def main():
         current_listener_id
       ]
     
-    if args.use_aita:
-      pipelines["referential_game"].append(aita_id)
     if args.use_aitao:
       pipelines["referential_game"].append(aitao_id)
  
@@ -2979,8 +3100,6 @@ def main():
       dataset_args=dataset_args,
       save_path=save_path,
     )
-
-  # In[22]:
 
   refgame.train(nbr_epoch=nbr_epoch,
                 logger=logger,

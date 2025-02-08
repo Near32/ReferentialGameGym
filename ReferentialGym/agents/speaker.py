@@ -194,7 +194,7 @@ def logits_mdl_principle_loss_hook(
     '''
 
     kl_logits_EoS = []
-    pad = -torch.inf*torch.ones((1, config['vocab_size'])).to(arange_token.device)
+    pad = -np.inf*torch.ones((1, config['vocab_size'])).to(arange_token.device)
     pad[:,agent.vocab_stop_idx] = 0.0
     for sl in outputs_dict['sentences_logits']:
         # distr :

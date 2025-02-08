@@ -289,7 +289,7 @@ def discriminative_st_gs_referential_game_loss(agent,
         losses_dict[f"repetition{it_rep}/comm_round{it_comm_round}/referential_game_loss"] = [1.0, loss]    
         outputs_dict["decision_probs"] = decision_probs
         logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/listener_target_decision_probs"] =\
-         decision_probs.gather(index=sample["target_decision_idx"].unsqueeze(1), dim=-1) #.exp()
+         decision_probs.gather(index=sample["target_decision_idx"].cpu().unsqueeze(1), dim=-1) #.exp()
     
     elif config["agent_loss_type"].lower() == "hinge":
         #Havrylov"s Hinge loss:
@@ -312,12 +312,12 @@ def discriminative_st_gs_referential_game_loss(agent,
     
     # Accuracy:
     decision_idx = decision_probs.max(dim=-1)[1]
-    acc = (decision_idx==sample["target_decision_idx"]).float()*100
+    acc = (decision_idx==sample["target_decision_idx"].cpu()).float()*100
     logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/referential_game_accuracy"] = acc
     outputs_dict["accuracy"] = acc
-    acc = (decision_idx==sample["target_decision_idx"]).float()*100
+    acc = (decision_idx==sample["target_decision_idx"].cpu()).float()*100
     logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/referential_game_decision_index/prediction"] = decision_idx.float()
-    logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/referential_game_decision_index/target"] = sample["target_decision_idx"].float()
+    logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/referential_game_decision_index/target"] = sample["target_decision_idx"].cpu().float()
     if nbr_distractors_po == 1:
         logs_dict[f"{mode}/repetition{it_rep}/comm_round{it_comm_round}/referential_game_descriptive_accuracy"] = acc
         outputs_dict["descriptive_accuracy"] = acc

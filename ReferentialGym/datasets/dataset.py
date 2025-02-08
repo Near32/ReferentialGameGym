@@ -374,16 +374,19 @@ class Dataset(torchDataset):
            
             # TYpe regularisation: turning everything into torch.Tensor :
             for k,v in same_speaker_sample_d.items():
+                if isinstance(v, torch.Tensor): continue
                 if not isinstance(v, dict): v = torch.Tensor(v)
                 else:   v = np.array(v)
                 same_speaker_sample_d[k] = v
             
             for k,v in speaker_sample_d.items():
+                if isinstance(v, torch.Tensor): continue
                 if not isinstance(v, dict): v = torch.Tensor(v)
                 else:   v = np.array(v)
                 speaker_sample_d[k] = v
             
             for k,v in listener_sample_d.items():
+                if isinstance(v, torch.Tensor): continue
                 if not isinstance(v, dict): v = torch.Tensor(v)
                 else:   v = np.array(v)
                 listener_sample_d[k] = v
