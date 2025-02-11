@@ -361,6 +361,7 @@ def main():
   parser.add_argument('--nb_3dshapespybullet_samples', type=int, default=100)
   parser.add_argument("--arch", type=str, 
     choices=["Dummy",
+             "MLP",
              "BaselineCNN",
              "ShortBaselineCNN",
              "BN+BaselineCNN",
@@ -1195,10 +1196,40 @@ def main():
     
     agent_config['non_linearities'] = [nn.LeakyReLU]
 
+    rg_config["use_feat_converter"] = False
+    agent_config["use_feat_converter"] = False
+  
+    if "BN" in args.arch:
+        agent_config["cnn_encoder_channels"] = ["BN32","BN32","BN64","BN64"]
+    else:
+        agent_config["cnn_encoder_channels"] = [32,32,64,64]
+    
+    if "3x3" in agent_config["architecture"]:
+        agent_config["cnn_encoder_kernels"] = [3,3,3,3]
+    elif "7x4x4x3" in agent_config["architecture"]:
+        agent_config["cnn_encoder_kernels"] = [7,4,4,3]
+    else:
+        agent_config["cnn_encoder_kernels"] = [4,4,4,4]
+    agent_config["cnn_encoder_strides"] = [2,2,2,2]
+    agent_config["cnn_encoder_paddings"] = [1,1,1,1]
+    agent_config["cnn_encoder_non_linearities"] = [torch.nn.ReLU]
+    agent_config["cnn_encoder_fc_hidden_units"] = agent_config["hidden_units"] 
+    # the last FC layer is provided by the cnn_encoder_feature_dim parameter below...
+    # For a fair comparison between CNN an VAEs:
+    agent_config["cnn_encoder_feature_dim"] = args.vae_nbr_latent_dim
+    #agent_config["cnn_encoder_feature_dim"] = cnn_feature_size
+    # N.B.: if cnn_encoder_fc_hidden_units is [],
+    # then this last parameter does not matter.
+    # The cnn encoder is not topped by a FC network.
+
+    agent_config["cnn_encoder_mini_batch_size"] = args.mini_batch_size
+    #agent_config["feat_converter_output_size"] = cnn_feature_size
+    agent_config["feat_converter_output_size"] = 256
+
     agent_config["temporal_encoder_nbr_hidden_units"] = 0
     agent_config["temporal_encoder_nbr_rnn_layers"] = 0
     agent_config["temporal_encoder_mini_batch_size"] = args.mini_batch_size
-    aagent_config["symbol_processing_nbr_hidden_units"] = args.symbol_processing_nbr_hidden_units
+    agent_config["symbol_processing_nbr_hidden_units"] = args.symbol_processing_nbr_hidden_units
     agent_config["symbol_processing_nbr_rnn_layers"] = 1
   else:
     raise NotImplementedError

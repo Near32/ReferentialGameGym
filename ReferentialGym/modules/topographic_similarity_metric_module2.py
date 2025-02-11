@@ -329,6 +329,18 @@ class TopographicSimilarityMetricModule2(Module):
         epoch = input_streams_dict["epoch"]        
         mode = input_streams_dict["mode"]
         
+        # Is it the end of the epoch?
+        end_of_epoch = all([
+          input_streams_dict[key]
+          for key in self.end_of_]
+        )
+        
+        # Re-logging to be able to plot with other metrics, especially test ones:
+        if hasattr(self, 'scores_dict') \
+        and end_of_epoch \
+        and ("test" in mode or ("train" in mode and epoch % self.config["epoch_period"] != 0)):
+            self.log_scores_dict(logs_dict, self.scores_dict, mode)
+        
         if epoch != 0 \
         and epoch % self.config["epoch_period"] == 0 and "train" in mode:
             if self.config.get("filtering_fn", (lambda x: True))(input_streams_dict):
@@ -349,12 +361,6 @@ class TopographicSimilarityMetricModule2(Module):
                 indices = input_streams_dict["indices"]
                 self.indices.append(indices.cpu().detach().numpy())
 
-            # Is it the end of the epoch?
-            end_of_epoch = all([
-              input_streams_dict[key]
-              for key in self.end_of_]
-            )
-            
             not_empty = len(self.indices) > 0
             
             if end_of_epoch and (not_empty or self.config["resample"]):
@@ -467,33 +473,15 @@ class TopographicSimilarityMetricModule2(Module):
                     """
                     scores_dict["num_active_dims"] = len(active_dims)
                     
+                scores_dict["unique_prod_ratios"] = unique_prod_ratios
+                scores_dict["pvalues"] = pvalues
+                scores_dict["pvalues_ohe"] = pvalues_ohe
+                scores_dict["pvalues_v"] = pvalues_v
+                scores_dict["pvalues_feat"] = pvalues_feat
 
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/TopoSim"] = scores_dict["topo_sims"]*100.0
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/NonAmbiguousProduction"] = unique_prod_ratios
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/PValues"] = pvalues
-                
-                if pvalues < self.pvalue_significance_threshold:
-                    logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/TopoSim/significant"] = scores_dict["topo_sims"]*100.0
-                
-                
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_OHE/TopoSim"] = scores_dict["topo_sims_ohe"]*100.0
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_OHE/PValues"] = pvalues_ohe
-                
-                if pvalues_ohe < self.pvalue_significance_threshold:
-                    logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_OHE/TopoSim/significant"] = scores_dict["topo_sims_ohe"]*100.0
-                
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Values/TopoSim"] = scores_dict["topo_sims_v"]*100.0
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Values/PValues"] = pvalues_v
-                
-                if pvalues_v < self.pvalue_significance_threshold:
-                    logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Values/TopoSim/significant"] = scores_dict["topo_sims_v"]*100.0
-                
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Features/TopoSim"] = scores_dict["feat_topo_sims"]*100.0
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Features/PValues"] = pvalues_feat
-                
-                if pvalues_feat < self.pvalue_significance_threshold:
-                    logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Features/TopoSim/significant"] = scores_dict["feat_topo_sims"]*100.0
-                
+                self.log_scores_dict(logs_dict, scores_dict, mode)
+                self.scores_dict = copy.deepcopy(scores_dict)
+
                 self.representations = []
                 self.features = []
                 self.latent_representations = []
@@ -523,12 +511,6 @@ class TopographicSimilarityMetricModule2(Module):
                 indices = input_streams_dict["indices"]
                 self.indices.append(indices.cpu().detach().numpy())
 
-            # Is it the end of the epoch?
-            end_of_epoch = all([
-              input_streams_dict[key]
-              for key in self.end_of_]
-            )
-            
             not_empty = len(self.indices) > 0
             
             if end_of_epoch and (not_empty or self.config["resample"]):
@@ -586,4 +568,33 @@ class TopographicSimilarityMetricModule2(Module):
  
 
         return outputs_stream_dict
-    
+
+    def log_scores_dict(self, logs_dict:Dict, scores_dict:Dict, mode:str):
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/TopoSim"] = scores_dict["topo_sims"]*100.0
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/NonAmbiguousProduction"] = scores_dict["unique_prod_ratios"]
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/PValues"] = scores_dict["pvalues"]
+        
+        if scores_dict["pvalues"] < self.pvalue_significance_threshold:
+            logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity/TopoSim/significant"] = scores_dict["topo_sims"]*100.0
+        
+        
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_OHE/TopoSim"] = scores_dict["topo_sims_ohe"]*100.0
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_OHE/PValues"] = scores_dict["pvalues_ohe"]
+        
+        if scores_dict["pvalues_ohe"] < self.pvalue_significance_threshold:
+            logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_OHE/TopoSim/significant"] = scores_dict["topo_sims_ohe"]*100.0
+        
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Values/TopoSim"] = scores_dict["topo_sims_v"]*100.0
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Values/PValues"] = scores_dict["pvalues_v"]
+        
+        if scores_dict["pvalues_v"] < self.pvalue_significance_threshold:
+            logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Values/TopoSim/significant"] = scores_dict["topo_sims_v"]*100.0
+        
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Features/TopoSim"] = scores_dict["feat_topo_sims"]*100.0
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Features/PValues"] = scores_dict["pvalues_feat"]
+        
+        if scores_dict["pvalues_feat"] < self.pvalue_significance_threshold:
+            logs_dict[f"{mode}/{self.id}/CompositionalityMetric/TopographicSimilarity_Features/TopoSim/significant"] = scores_dict["feat_topo_sims"]*100.0
+        
+        return
+

@@ -1,27 +1,27 @@
 WANDB_CACHE_DIR=./wandb_cache/ python -m ipdb -c c train_wandb.py \
 --project="COMPO+DIS+SYS-DEBUG" \
---seed=11 \
+--seed=31 \
 --use_cuda=True \
 --object_centric_version=2 \
 --descriptive_version=1 \
 --dataloader_num_worker=2 \
 --descriptive=False --descriptive_ratio=0 \
---object_centric=False \
+--object_centric=True \
 --nbr_distractors=32 \
 --resizeDim="-1" \
 --shared_architecture=True \
 --add_descriptive_test=False \
 --add_discriminative_test=False --nbr_discriminative_test_distractors=7 \
 --agent_loss_type=Impatient+Hinge --agent_nbr_latent_dim=32 \
---arch=Dummy --baseline_only=False \
---lr=0.001 --weight_decay=1e-4 \
+--arch="MLP" --baseline_only=False \
+--lr=0.0001 --weight_decay=0.0 \
 --logits_mdl_principle_factor=0.0 \
 --logits_mdl_principle_use_inst_accuracy=True \
 --logits_mdl_principle_accuracy_threshold=70 \
 --nbr_experience_repetition=1 --batch_size=128 \
 --dataset=SCS --dataset_length=0 \
 --scs_nbr_latents=4 --scs_min_nbr_values_per_latent=4 \
---scs_max_nbr_values_per_latent=4 --scs_nbr_object_centric_samples=1 \
+--scs_max_nbr_values_per_latent=4 --scs_nbr_object_centric_samples=4 \
 --nb_3dshapespybullet_colors=10 --nb_3dshapespybullet_samples=10 \
 --nb_3dshapespybullet_shapes=10 --nb_3dshapespybullet_train_colors=5 \
 --dis_metric_resampling=True --distractor_sampling=uniform \
@@ -40,7 +40,8 @@ WANDB_CACHE_DIR=./wandb_cache/ python -m ipdb -c c train_wandb.py \
 --obverter_threshold_to_stop_message_generation=0.95 --obverter_use_residual_connections=False \
 --parallel_TS_worker=8 --parent_folder=./scs_stgs_test \
 --symbol_embedding_size=64 --symbol_processing_nbr_hidden_units=256 \
---synthetic_progression_end=10 --train_test_split_strategy=divider-1-offset-0 \
+--synthetic_progression_end=10 \
+--train_test_split_strategy="combinatorial2-Y-8-S2-X-8-S2-Orientation-4-N-Scale-2-S1-Shape-1-S1" \
 --vae_factor_gamma=0 --vae_gaussian=False --vae_lambda=0 --vae_nbr_latent_dim=32 \
 --visual_context_consistent_obverter=False --use_utterance_conditioned_threshold=False \
 --with_BN_in_obverter_decision_head=False --with_DP_in_obverter_decision_head=False \

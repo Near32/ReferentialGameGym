@@ -42,7 +42,11 @@ def choose_architecture( architecture,
         return DummyBody(input_shape)
     
     if 'MLP' in architecture:
-        return FCBody(input_shape, hidden_units=fc_hidden_units_list, non_linearities=[nn.LeakyReLU])
+        return FCBody(
+            input_shape, 
+            hidden_units=fc_hidden_units_list, 
+            non_linearities=non_linearities,#[nn.LeakyReLU])
+        )
     
     if 'CNN' in architecture and 'DCNN' not in architecture:
         use_coordconv = None

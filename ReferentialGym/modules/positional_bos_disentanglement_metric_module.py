@@ -444,6 +444,18 @@ class PositionalBagOfSymbolsDisentanglementMetricModule(Module):
         mode = input_streams_dict["mode"]
         epoch = input_streams_dict["epoch"]
         
+        # Is it the end of the epoch?
+        end_of_epoch = all([
+          input_streams_dict[key]
+          for key in self.end_of_]
+        )
+        
+        # Re-logging to be able to plot with other metrics, especially test ones:
+        if hasattr(self, 'scores_dict') \
+        and end_of_epoch \
+        and ("test" in mode or ("train" in mode and epoch % self.config["epoch_period"] != 0)):
+            self.log_scores_dict(logs_dict, self.scores_dict, mode)
+        
         if epoch != 0 \
         and epoch % self.config["epoch_period"] == 0 and "train" in mode:
             if self.config.get("filtering_fn", (lambda x: True))(input_streams_dict):
@@ -456,12 +468,6 @@ class PositionalBagOfSymbolsDisentanglementMetricModule(Module):
                 indices = input_streams_dict["indices"]
                 self.indices.append(indices.cpu().detach().numpy())
 
-            # Is it the end of the epoch?
-            end_of_epoch = all([
-              input_streams_dict[key]
-              for key in self.end_of_]
-            )
-            
             not_empty = len(self.indices) > 0
             
             if end_of_epoch and (not_empty or self.config["resample"]):
@@ -544,10 +550,7 @@ class PositionalBagOfSymbolsDisentanglementMetricModule(Module):
 
                     # To what extent is a factor captured in a modular way by the model?
                     per_factor_maxmi = np.max(mutual_information, axis=0)
-
-                    for idx, maxmi in enumerate(per_factor_maxmi):
-                        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/MaxMutualInformation/factor_{idx}"] = maxmi
-                    
+                    scores_dict["pos_factors"] = per_factor_maxmi
                     ###########################################
                     ###########################################
                     # Bag-of-symbols Disentanglement:
@@ -591,21 +594,12 @@ class PositionalBagOfSymbolsDisentanglementMetricModule(Module):
                     
                     # To what extent is a factor captured in a modular way by the model?
                     per_factor_bosmaxmi = np.max(bos_mutual_information, axis=0)
+                    scores_dict["bos_factors"] = per_factor_bosmaxmi
 
-                    for idx, maxmi in enumerate(per_factor_bosmaxmi):
-                        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/MaxMutualInformation/factor_{idx}"] = maxmi
-                    
                     ###########################################
                 
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/PosDisScore/Discretized"] = scores_dict["discr_posdis_score_denamganai"]
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/PosDisScore/SpeakerCentred"] = scores_dict["posdis_score_denamganai"]
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/PosDisScore/ListenerCentred"] = scores_dict["posdis_score_chaabouni"]
-                
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/BosDisScore/SpeakerCentred/Discretized"] = scores_dict["discr_bosdis_score_denamganai"]
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/BosDisScore/SpeakerCentred/"] = scores_dict["bosdis_score_denamganai"]
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/BosDisScore/ListenerCentred/"] = scores_dict["bosdis_score_chaabouni"]
-                
-                logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalBagOfSymbolsDisentanglement/nbr_active_dims"] = scores_dict["num_active_dims"]
+                self.log_scores_dict(logs_dict, scores_dict, mode)
+                self.scores_dict = copy.deepcopy(scores_dict)
 
                 self.representations = []
                 self.latent_representations = []
@@ -615,4 +609,22 @@ class PositionalBagOfSymbolsDisentanglementMetricModule(Module):
                 if hasattr(model, "eval"):  model.train()
                 
         return outputs_stream_dict
-    
+
+    def log_scores_dict(self, logs_dict:Dict, scores_dict:Dict, mode:str):
+        for idx, maxmi in enumerate(scores_dict.get("pos_factors", [])):
+            logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/MaxMutualInformation/factor_{idx}"] = maxmi
+        
+        for idx, maxmi in enumerate(scores_dict.get("bos_factors", [])):
+            logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/MaxMutualInformation/factor_{idx}"] = maxmi
+        
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/PosDisScore/Discretized"] = scores_dict["discr_posdis_score_denamganai"]
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/PosDisScore/SpeakerCentred"] = scores_dict["posdis_score_denamganai"]
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalDisentanglement/PosDisScore/ListenerCentred"] = scores_dict["posdis_score_chaabouni"]
+        
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/BosDisScore/SpeakerCentred/Discretized"] = scores_dict["discr_bosdis_score_denamganai"]
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/BosDisScore/SpeakerCentred/"] = scores_dict["bosdis_score_denamganai"]
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/BagOfSymbolsDisentanglement/BosDisScore/ListenerCentred/"] = scores_dict["bosdis_score_chaabouni"]
+        
+        logs_dict[f"{mode}/{self.id}/CompositionalityMetric/PositionalBagOfSymbolsDisentanglement/nbr_active_dims"] = scores_dict["num_active_dims"]
+
+        return

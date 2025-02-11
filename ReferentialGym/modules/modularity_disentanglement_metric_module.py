@@ -358,6 +358,18 @@ class ModularityDisentanglementMetricModule(Module):
         mode = input_streams_dict["mode"]
         epoch = input_streams_dict["epoch"]
         
+        # Is it the end of the epoch?
+        end_of_epoch = all([
+          input_streams_dict[key]
+          for key in self.end_of_]
+        )
+        
+        # Re-logging to be able to plot with other metrics, especially test ones:
+        if hasattr(self, 'scores_dict') \
+        and end_of_epoch \
+        and ("test" in mode or ("train" in mode and epoch % self.config["epoch_period"] != 0)):
+            self.log_scores_dict(logs_dict, self.scores_dict, mode)
+        
         if epoch != 0 \
         and epoch % self.config["epoch_period"] == 0 and "train" in mode:
             if self.config.get("filtering_fn", (lambda x: True))(input_streams_dict):
@@ -368,12 +380,6 @@ class ModularityDisentanglementMetricModule(Module):
                 indices = input_streams_dict["indices"]
                 self.indices.append(indices.cpu().detach().numpy())
 
-            # Is it the end of the epoch?
-            end_of_epoch = all([
-              input_streams_dict[key]
-              for key in self.end_of_]
-            )
-            
             not_empty = len(self.indices) > 0
             
             if end_of_epoch and (not_empty or self.config["resample"]):
@@ -414,6 +420,7 @@ class ModularityDisentanglementMetricModule(Module):
                     #scores_dict["nondiscr_modularity_score1"] = 0.
                     #scores_dict["nondiscr_modularity_score2"] = 0.
                     scores_dict["num_active_dims"] = 0
+                    per_factor_maxmi = []
                 else:
                     train_repr, train_lrepr = self._generate_training_batch(
                         dataset=dataset,
@@ -440,15 +447,12 @@ class ModularityDisentanglementMetricModule(Module):
                     # To what extent is a factor captured in a modular way by the model?
                     #per_factor_maxmi = np.max(mutual_information, axis=0)
                     per_factor_maxmi = np.max(discr_mutual_information, axis=0)
-
+                    scores_dict['factors'] = per_factor_maxmi
                     for idx, maxmi in enumerate(per_factor_maxmi):
-                        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/MaxMutualInformation/factor_{idx}"] = maxmi
-                    
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/ModularityScore1"] = scores_dict["modularity_score1"]
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/ModularityScore2"] = scores_dict["modularity_score2"]
-                #logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/NonDiscrModularityScore1"] = scores_dict["nondiscr_modularity_score1"]
-                #logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/NonDiscrModularityScore2"] = scores_dict["nondiscr_modularity_score2"]
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/nbr_active_dims"] = scores_dict["num_active_dims"]
+                        scores_dict[f'factor_{idx}'] = maxmi
+                
+                self.log_scores_dict(logs_dict, scores_dict, mode)
+                self.scores_dict = copy.deepcopy(scores_dict)
 
                 self.representations = []
                 self.latent_representations = []
@@ -458,4 +462,17 @@ class ModularityDisentanglementMetricModule(Module):
                 model.train()
                 
         return outputs_stream_dict
-    
+   
+    def log_scores_dict(self, logs_dict:Dict, scores_dict: Dict, mode:str):
+        for idx, maxmi in enumerate(scores_dict.get('factors', [])):
+            if f"factor_{idx}" in scores_dict:
+                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/MaxMutualInformation/factor_{idx}"] = scores_dict[f"factor_{idx}"]
+                    
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/ModularityScore1"] = scores_dict["modularity_score1"]
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/ModularityScore2"] = scores_dict["modularity_score2"]
+        #logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/NonDiscrModularityScore1"] = scores_dict["nondiscr_modularity_score1"]
+        #logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/NonDiscrModularityScore2"] = scores_dict["nondiscr_modularity_score2"]
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/Modularity/nbr_active_dims"] = scores_dict["num_active_dims"]
+        
+        return
+

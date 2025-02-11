@@ -270,6 +270,18 @@ class FactorVAEDisentanglementMetricModule(Module):
         mode = input_streams_dict["mode"]
         epoch = input_streams_dict["epoch"]
         
+        # Is it the end of the epoch?
+        end_of_epoch = all([
+          input_streams_dict[key]
+          for key in self.end_of_]
+        )
+        
+        # Re-logging to be able to plot with other metrics, especially test ones:
+        if hasattr(self, 'scores_dict') \
+        and end_of_epoch \
+        and ("test" in mode or ("train" in mode and epoch % self.config["epoch_period"] != 0)):
+            self.log_scores_dict(logs_dict, self.scores_dict, mode)
+        
         if epoch != 0 \
         and epoch % self.config["epoch_period"] == 0 and "train" in mode:
             if self.config.get("filtering_fn", (lambda x: True))(input_streams_dict):
@@ -282,12 +294,6 @@ class FactorVAEDisentanglementMetricModule(Module):
                 indices = input_streams_dict["indices"]
                 self.indices.append(indices.cpu().detach().numpy())
 
-            # Is it the end of the epoch?
-            end_of_epoch = all([
-              input_streams_dict[key]
-              for key in self.end_of_]
-            )
-            
             not_empty = len(self.indices) > 0
             
             if end_of_epoch and (not_empty or self.config["resample"]):
@@ -367,17 +373,14 @@ class FactorVAEDisentanglementMetricModule(Module):
                     
                     scores_dict["train_accuracy"] = train_accuracy*100.0
                     scores_dict["eval_accuracy"] = eval_accuracy*100.0
+                    scores_dict["factors"] = per_factor_eval_accuracy
                     for idx, acc in enumerate(per_factor_eval_accuracy):
                         scores_dict[f"eval_accuracy_{idx}"] = acc*100.0
                         
                     scores_dict["num_active_dims"] = len(active_dims)
                     
-                    for idx, acc in enumerate(per_factor_eval_accuracy):
-                        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/eval_accuracy/factor_{idx}"] = scores_dict[f"eval_accuracy_{idx}"]
-                    
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/train_accuracy"] = scores_dict["train_accuracy"]
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/eval_accuracy/mean"] = scores_dict["eval_accuracy"]
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/nbr_active_dims"] = scores_dict["num_active_dims"]
+                self.log_scores_dict(logs_dict, scores_dict, mode)
+                self.scores_dict = copy.deepcopy(scores_dict)
 
                 self.representations = []
                 self.latent_representations = []
@@ -386,6 +389,17 @@ class FactorVAEDisentanglementMetricModule(Module):
                 self.indices = []
 
                 model.train()
-            
+        
         return outputs_stream_dict
+    
+    def log_scores_dict(self, logs_dict:Dict, scores_dict:Dict, mode:str):
+        for idx, acc in enumerate(scores_dict.get('factors',[])):
+            if f"eval_accuracy_{idx}" in scores_dict:
+                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/eval_accuracy/factor_{idx}"] = scores_dict[f"eval_accuracy_{idx}"]
+                    
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/train_accuracy"] = scores_dict["train_accuracy"]
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/eval_accuracy/mean"] = scores_dict["eval_accuracy"]
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/FactorVAE/nbr_active_dims"] = scores_dict["num_active_dims"]
+
+        return 
     

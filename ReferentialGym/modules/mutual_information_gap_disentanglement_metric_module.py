@@ -334,10 +334,21 @@ class MutualInformationGapDisentanglementMetricModule(Module):
         global eps 
         outputs_stream_dict = {}
 
-
         logs_dict = input_streams_dict["logs_dict"]
         mode = input_streams_dict["mode"]
         epoch = input_streams_dict["epoch"]
+        
+        # Is it the end of the epoch?
+        end_of_epoch = all([
+          input_streams_dict[key]
+          for key in self.end_of_]
+        )
+        
+        # Re-logging to be able to plot with other metrics, especially test ones:
+        if hasattr(self, 'scores_dict') \
+        and end_of_epoch \
+        and ("test" in mode or ("train" in mode and epoch % self.config["epoch_period"] != 0)):
+            self.log_scores_dict(logs_dict, self.scores_dict, mode)
         
         if epoch != 0 \
         and epoch % self.config["epoch_period"] == 0 and "train" in mode:
@@ -428,35 +439,22 @@ class MutualInformationGapDisentanglementMetricModule(Module):
                     )
                     #ndms, nondiscr_mig_scores = self._compute_mutual_information_gap_score(nondiscr_mutual_information, entropy)
 
+                    # To what extent is a factor captured in a modular way by the model?
+                    per_factor_maxmi = np.max(mutual_information, axis=0)
+
                     scores_dict["mig_score"] = ms
                     scores_dict["nne_mig_score"] = nne_ms
                     #scores_dict["nondiscr_mig_score"] = ndms
                     scores_dict["num_active_dims"] = len(active_dims)
                     
-                    for idx, msi in enumerate(mig_scores[:]):
-                        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NormalizedMutualInformationGap/factor_{idx}"] = msi
-                    
-                    for idx, nne_msi in enumerate(nne_mig_scores[:]):
-                        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NonNullEntropy-NormalizedMutualInformationGap/factor_{idx}"] = nne_msi
-                                        
-                    # To what extent is a factor captured in a modular way by the model?
-                    per_factor_maxmi = np.max(mutual_information, axis=0)
+                    scores_dict["mig_scores"] = mig_scores[:]
+                    scores_dict["nne_mig_scores"] = nne_mig_scores[:]
+                    scores_dict["factors"] = per_factor_maxmi
+                    scores_dict["entropies"] = entropy[:]
+                    scores_dict['eps'] = eps
 
-                    for idx, maxmi in enumerate(per_factor_maxmi):
-                        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/MaxMutualInformation/factor_{idx}"] = maxmi
-                        nmmi = -1
-                        entidx = entropy[:][idx]
-                        if entidx > eps:
-                            nmmi = maxmi/entidx
-                        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NormalizedMaxMutualInformation/factor_{idx}"] = nmmi
-                    
-                    for idx, enti in enumerate(entropy[:]):
-                        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/Entropy/factor_{idx}"] = enti
-                    
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/MIGScore"] = scores_dict["mig_score"]
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/NonNullEntropy-MutualInformationGap/MIGScore"] = scores_dict["nne_mig_score"]
-                #logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NonDiscrMIGScore"] = scores_dict["nondiscr_mig_score"]
-                logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/nbr_active_dims"] = scores_dict["num_active_dims"]
+                self.log_scores_dict(logs_dict, scores_dict, mode)
+                self.scores_dict = copy.deepcopy(scores_dict)
 
                 self.representations = []
                 self.latent_representations = []
@@ -464,7 +462,29 @@ class MutualInformationGapDisentanglementMetricModule(Module):
                 self.indices = []
 
                 model.train()
-                
             
         return outputs_stream_dict
-    
+
+    def log_scores_dict(self, logs_dict:Dict, scores_dict: Dict, mode:str):
+        for idx, msi in enumerate(scores_dict.get("mig_scores", [])):
+            logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NormalizedMutualInformationGap/factor_{idx}"] = msi
+                    
+        for idx, nne_msi in enumerate(scores_dict.get("nne_mig_scores", [])):
+            logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NonNullEntropy-NormalizedMutualInformationGap/factor_{idx}"] = nne_msi
+                                    
+        for idx, maxmi in enumerate(scores_dict.get("factors", [])):
+            logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/MaxMutualInformation/factor_{idx}"] = maxmi
+            nmmi = -1
+            entidx = scores_dict["entropies"][idx]
+            logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/Entropy/factor_{idx}"] = entidx
+            if entidx > scores_dict['eps']:
+                nmmi = maxmi/entidx
+            logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NormalizedMaxMutualInformation/factor_{idx}"] = nmmi
+            
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/MIGScore"] = scores_dict["mig_score"]
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/NonNullEntropy-MutualInformationGap/MIGScore"] = scores_dict["nne_mig_score"]
+        #logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/NonDiscrMIGScore"] = scores_dict["nondiscr_mig_score"]
+        logs_dict[f"{mode}/{self.id}/DisentanglementMetric/MutualInformationGap/nbr_active_dims"] = scores_dict["num_active_dims"]
+
+        return
+
