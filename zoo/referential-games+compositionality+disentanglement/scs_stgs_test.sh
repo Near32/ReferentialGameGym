@@ -1,27 +1,34 @@
 WANDB_CACHE_DIR=./wandb_cache/ python -m ipdb -c c train_wandb.py \
 --project="COMPO+DIS+SYS-DEBUG" \
---seed=31 \
+--seed=11 \
 --use_cuda=True \
 --object_centric_version=2 \
 --descriptive_version=1 \
 --dataloader_num_worker=2 \
---descriptive=False --descriptive_ratio=0 \
+--descriptive=True --descriptive_ratio=0 \
 --object_centric=True \
 --nbr_distractors=32 \
 --resizeDim="-1" \
---shared_architecture=True \
+--shared_architecture=False \
+--with_LN_in_listener_only=False \
+--iterated_learning_scheme=True \
+--iterated_learning_period=128 \
+--agent_weight_decay_exceptions="tau_fc,not_target_logit" \
+--listener_weight_decay_factor=0.0 \
+--speaker_weight_decay_factor=0.0 \
 --add_descriptive_test=False \
 --add_discriminative_test=False --nbr_discriminative_test_distractors=7 \
 --agent_loss_type=Impatient+Hinge --agent_nbr_latent_dim=32 \
 --arch="MLP" --baseline_only=False \
---lr=0.0001 --weight_decay=0.0 \
+--lr=0.0005 --weight_decay=0.0 \
 --logits_mdl_principle_factor=0.0 \
 --logits_mdl_principle_use_inst_accuracy=True \
 --logits_mdl_principle_accuracy_threshold=70 \
 --nbr_experience_repetition=1 --batch_size=128 \
 --dataset=SCS --dataset_length=0 \
+--scs_use_ohe_latent=True \
 --scs_nbr_latents=4 --scs_min_nbr_values_per_latent=4 \
---scs_max_nbr_values_per_latent=4 --scs_nbr_object_centric_samples=4 \
+--scs_max_nbr_values_per_latent=4 --scs_nbr_object_centric_samples=16 \
 --nb_3dshapespybullet_colors=10 --nb_3dshapespybullet_samples=10 \
 --nb_3dshapespybullet_shapes=10 --nb_3dshapespybullet_train_colors=5 \
 --dis_metric_resampling=True --distractor_sampling=uniform \
@@ -30,7 +37,7 @@ WANDB_CACHE_DIR=./wandb_cache/ python -m ipdb -c c train_wandb.py \
 --epoch=16001 --graphtype=straight_through_gumbel_softmax \
 --max_sentence_length=10 --vocab_size=20 \
 --metric_active_factors_only=True --metric_batch_size=64 \
---dis_metric_epoch_period=201 --metric_epoch_period=5 \
+--dis_metric_epoch_period=20 --metric_epoch_period=5 \
 --metric_resampling=True --mini_batch_size=64 \
 --nbr_eval_points=400 --nbr_train_points=500 \
 --obverter_nbr_games_per_round=32 \

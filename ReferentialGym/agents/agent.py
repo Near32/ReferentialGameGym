@@ -267,6 +267,9 @@ class Agent(Module):
         self.vocab_stop_idx = 0
         self.vocab_pad_idx = self.vocab_size
         
+        if self.kwargs.get("agent_weight_decay_factor", 0.0) > 0.0:
+            self.register_backward_hook(self._agent_weight_decay_hook)
+
         self.hooks = []
         if self.kwargs.get("with_weight_maxl1_loss", False):
             self.register_hook(maxl1_loss_hook)
@@ -274,7 +277,23 @@ class Agent(Module):
         self.pipeline_hooks = []
 	
         self.role = role        
-    
+
+    def _agent_weight_decay_hook(self, *_):
+        '''
+        Applies Weight Decay to all not-None-grad parameters of the agent:
+        '''
+        for name, param in self.named_parameters():
+            exceptions_hitlist = [
+                exception 
+                for exception in self.kwargs.get("agent_weight_decay_exceptions", "?").split(",")
+                if exception in name
+            ]
+            if len(exceptions_hitlist): 
+                continue
+            grad = self.kwargs["agent_weight_decay_factor"] * param.data
+            if param.grad is not None:  grad += param.grad
+            param.grad = grad
+
     def set_vocabulary(self, vocabulary):
         self.vocabulary = vocabulary
         for idx, w in enumerate(self.vocabulary):

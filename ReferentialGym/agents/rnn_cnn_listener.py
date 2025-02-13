@@ -104,7 +104,8 @@ class RNNCNNListener(DiscriminativeListener):
             self.featout_converter =  nn.Sequential(*self.featout_converter)
             self.encoder_feature_shape = self.kwargs['feat_converter_output_size']
         
-        self.cnn_encoder_normalization = nn.BatchNorm1d(num_features=self.encoder_feature_shape)
+        self.cnn_encoder_normalization = None #nn.BatchNorm1d(num_features=self.encoder_feature_shape)
+        #self.cnn_encoder_normalization = nn.LayerNorm(normalized_shape=self.encoder_feature_shape)
         
         temporal_encoder_input_dim = self.cnn_encoder.get_feature_shape()
         if self.kwargs['temporal_encoder_nbr_rnn_layers'] > 0:
@@ -120,7 +121,7 @@ class RNNCNNListener(DiscriminativeListener):
             self.kwargs['temporal_encoder_nbr_hidden_units'] = self.kwargs['nbr_stimulus']*self.encoder_feature_shape
             self.kwargs['symbol_processing_nbr_hidden_units'] = self.kwargs['temporal_encoder_nbr_hidden_units']
 
-        self.normalization = nn.BatchNorm1d(num_features=self.kwargs['temporal_encoder_nbr_hidden_units'])
+        self.normalization = None #nn.BatchNorm1d(num_features=self.kwargs['temporal_encoder_nbr_hidden_units'])
         #self.normalization = nn.LayerNorm(normalized_shape=self.kwargs['temporal_encoder_nbr_hidden_units'])
     
         symbol_processing_input_dim = self.kwargs['symbol_embedding_size']
@@ -160,8 +161,9 @@ class RNNCNNListener(DiscriminativeListener):
         self.not_target_logits_per_token = nn.Parameter(torch.ones((1, 1, 1)))
         
         self.projection_normalization = None #nn.BatchNorm1d(num_features=self.kwargs['max_sentence_length']*self.kwargs['symbol_processing_nbr_hidden_units'])
+        #self.projection_normalization = nn.LayerNorm(normalized_shape=self.kwargs['max_sentence_length']*self.kwargs['symbol_processing_nbr_hidden_units'])
 
-        self.reset_weights()
+        self.reset_weights(whole=True)
         
         if self.kwargs['use_cuda']:
             self = self.cuda()
@@ -245,7 +247,8 @@ class RNNCNNListener(DiscriminativeListener):
             features.append(featout)
         
         self.features = torch.cat(features, dim=0).reshape((-1, featout.shape[-1]))
-        self.features = self.cnn_encoder_normalization(self.features)
+        if self.cnn_encoder_normalization is not None:
+            self.features = self.cnn_encoder_normalization(self.features)
         
         self.features = self.features.view(batch_size, nbr_distractors_po, self.config['nbr_stimulus'], -1)
         # (batch_size, nbr_distractors+1 / ? (descriptive mode depends on the role of the agent), nbr_stimulus, feature_dim)
@@ -297,11 +300,15 @@ class RNNCNNListener(DiscriminativeListener):
                 # Caring only about the final output:
                 embedding_tf_final_outputs = outputs[:,:,-1,:].contiguous()
                 # (batch_size, (nbr_distractors+1), kwargs['temporal_encoder_nbr_hidden_units'])
-                self.embedding_tf_final_outputs = self.normalization(embedding_tf_final_outputs.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
-                self.embedding_tf_final_outputs = self.embedding_tf_final_outputs.reshape(batch_size, nbr_distractors_po, -1)
+                if self.normalization is not None:
+                    embedding_tf_final_outputs = self.normalization(embedding_tf_final_outputs.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
+                self.embedding_tf_final_outputs = embedding_tf_final_outputs.reshape(batch_size, nbr_distractors_po, -1)
                 # (batch_size, (nbr_distractors+1), kwargs['temporal_encoder_nbr_hidden_units'])
             else:
-                self.embedding_tf_final_outputs = self.normalization(features.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
+                if self.normalization is not None:
+                    self.embedding_tf_final_outputs = self.normalization(features.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
+                else:
+                    self.embedding_tf_final_outputs = features
                 self.embedding_tf_final_outputs = self.embedding_tf_final_outputs.reshape((batch_size, nbr_distractors_po, -1))
                 # (batch_size, (nbr_distractors+1), kwargs['temporal_encoder_nbr_hidden_units'])
 

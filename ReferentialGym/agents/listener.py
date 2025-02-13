@@ -7,7 +7,7 @@ from ..networks import layer_init
 from ..utils import gumbel_softmax 
 from .agent import Agent
 
-#TODO:
+#TODO: iterated learning rehearsal
 """
 if 'iterated_learning_scheme' in config \
     and config['iterated_learning_scheme']\

@@ -45,6 +45,7 @@ def choose_architecture( architecture,
         return FCBody(
             input_shape, 
             hidden_units=fc_hidden_units_list, 
+            dropout=dropout,
             non_linearities=non_linearities,#[nn.LeakyReLU])
         )
     

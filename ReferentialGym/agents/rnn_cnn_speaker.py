@@ -96,7 +96,8 @@ class RNNCNNSpeaker(Speaker):
             self.featout_converter =  nn.Sequential(*self.featout_converter)
             self.encoder_feature_shape = self.kwargs['feat_converter_output_size']
         
-        self.cnn_encoder_normalization = nn.BatchNorm1d(num_features=self.encoder_feature_shape)
+        self.cnn_encoder_normalization = None #nn.BatchNorm1d(num_features=self.encoder_feature_shape)
+        #self.cnn_encoder_normalization = nn.LayerNorm(normalized_shape=self.encoder_feature_shape)
 
         temporal_encoder_input_dim = self.cnn_encoder.get_feature_shape()
         if self.kwargs['temporal_encoder_nbr_rnn_layers'] > 0:
@@ -113,7 +114,7 @@ class RNNCNNSpeaker(Speaker):
             self.kwargs['symbol_processing_nbr_hidden_units'] = self.kwargs['temporal_encoder_nbr_hidden_units']
 
 
-        self.normalization = nn.BatchNorm1d(num_features=self.kwargs['temporal_encoder_nbr_hidden_units'])
+        self.normalization = None #nn.BatchNorm1d(num_features=self.kwargs['temporal_encoder_nbr_hidden_units'])
         #self.normalization = nn.LayerNorm(normalized_shape=self.kwargs['temporal_encoder_nbr_hidden_units'])
 
         symbol_decoder_input_dim = self.kwargs['symbol_embedding_size']
@@ -154,15 +155,17 @@ class RNNCNNSpeaker(Speaker):
 
         self.feat_maps = None
         
-        self.reset_weights()
+        self.reset_weights(whole=True)
     
-    def reset_weights(self, reset_language_model=False):
+    def reset_weights(self, reset_language_model=False, whole=False):
         # Reset EoS and SoS maybe?
         self.symbol_processing.apply(layer_init)
         self.symbol_encoder.apply(layer_init)
         self.symbol_decoder.apply(layer_init)
         self.embedding_tf_final_outputs = None
         self._reset_rnn_states()
+        if whole:
+            self.cnn_encoder.apply(layer_init)
 
     def _tidyup(self):
         self.embedding_tf_final_outputs = None
@@ -234,7 +237,8 @@ class RNNCNNSpeaker(Speaker):
             feat_maps.append(feat_map)
 
         self.features = torch.cat(features, dim=0).reshape((-1, featout.shape[-1]))
-        self.features = self.cnn_encoder_normalization(self.features)
+        if self.cnn_encoder_normalization is not None:
+            self.features = self.cnn_encoder_normalization(self.features)
         self.feat_maps = torch.cat(feat_maps, dim=0)
         
         self.features = self.features.view(batch_size, nbr_distractors_po, self.config['nbr_stimulus'], -1)
@@ -287,11 +291,15 @@ class RNNCNNSpeaker(Speaker):
             # TODO: find a way to compute the sentence while attending other features in case of full observability...
             embedding_tf_final_outputs = outputs[:,0,-1,:].contiguous()
             # (batch_size, kwargs['temporal_encoder_feature_dim'])
-            self.embedding_tf_final_outputs = self.normalization(embedding_tf_final_outputs.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
-            self.embedding_tf_final_outputs = self.embedding_tf_final_outputs.reshape(batch_size, self.kwargs['nbr_distractors']+1, -1)
+            if self.normalization is not None:
+                embedding_tf_final_outputs = self.normalization(embedding_tf_final_outputs.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
+            self.embedding_tf_final_outputs = embedding_tf_final_outputs.reshape(batch_size, self.kwargs['nbr_distractors']+1, -1)
             # (batch_size, 1, kwargs['temporal_encoder_nbr_hidden_units'])
         else:
-            self.embedding_tf_final_outputs = self.normalization(features.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
+            if self.normalization is not None:
+                self.embedding_tf_final_outputs = self.normalization(features.reshape((-1, self.kwargs['temporal_encoder_nbr_hidden_units'])))
+            else:
+                self.embedding_tf_final_outputs = features
             self.embedding_tf_final_outputs = self.embedding_tf_final_outputs.reshape((batch_size, self.kwargs['nbr_distractors']+1, -1))
             # (batch_size, 1, kwargs['temporal_encoder_nbr_hidden_units'])
 

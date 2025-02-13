@@ -69,7 +69,7 @@ class PopulationHandlerModule(Module):
         self.dspeakers = dict()
         speakers = [prototype_speaker]+[ prototype_speaker.clone(clone_id=f's{i+1}') for i in range(nbr_speaker-1)]
         for speaker in speakers:
-            speaker.reset_weights(reset_language_model=True)
+            speaker.reset_weights(reset_language_model=True, whole=True)
             self.speakers.append(speaker)
             self.dspeakers[speaker.id] = speaker
         if 'cultural_listener_substrate_size' not in self.config:
@@ -80,12 +80,12 @@ class PopulationHandlerModule(Module):
         self.dlisteners = dict()
         listeners = [prototype_listener]+[ prototype_listener.clone(clone_id=f'l{i+1}') for i in range(nbr_listener-1)]
         for listener in listeners:
-            listener.reset_weights(reset_language_model=True)
+            listener.reset_weights(reset_language_model=True, whole=True)
             self.listeners.append(listener)
             self.dlisteners[listener.id] = listener
 
-        if 'cultural_reset_strategy' in self.config\
-            and 'meta' in self.config['cultural_reset_strategy']:
+        if 'cultural_reset_strategy' in self.config \
+        and 'meta' in self.config['cultural_reset_strategy']:
             self.meta_agents = dict()
             self.meta_agents_optimizers = dict()
             for agent in [prototype_speaker, prototype_listener]: 
@@ -257,8 +257,7 @@ class PopulationHandlerModule(Module):
 
         # Reset agent(s):
         if 'train' in mode \
-        and 'cultural_pressure_it_period' in self.config\
-        and self.config["cultural_pressure_it_period"] is not None \
+        and self.config.get("cultural_pressure_it_period", None) is not None \
         and sum(self.previous_global_it_datasample.values()) % self.config['cultural_pressure_it_period'] == 0:
         #and (idx_stimuli+len(data_loader)*epoch) % self.config['cultural_pressure_it_period'] == 0:
             if 'oldest' in self.config['cultural_reset_strategy']:
@@ -307,7 +306,8 @@ class PopulationHandlerModule(Module):
                 if self.verbose:
                     print("Agent  Listener {} has just been resetted.".format(self.listeners[idx_listener2reset].agent_id))
 
-            if 'L' not in self.config['cultural_reset_strategy'] and 'S' not in self.config['cultural_reset_strategy']:
+            if 'L' not in self.config['cultural_reset_strategy'] \
+            and 'S' not in self.config['cultural_reset_strategy']:
                 if idx_agent2reset < len(self.listeners):
                     agents = self.listeners 
                 else:
@@ -409,11 +409,10 @@ class PopulationHandlerModule(Module):
                         outputs_stream_dict['speakers'] = self.speakers
                         outputs_stream_dict['listeners'] = self.listeners
 
-                if 'iterated_learning_scheme' in self.config\
-                    and self.config['iterated_learning_scheme']\
-                    and self.counterGames%self.config['iterated_learning_period']==0:
+                if self.config.get('iterated_learning_scheme', False) \
+                and self.counterGames%self.config['iterated_learning_period']==0:
                     for lidx in range(len(self.listeners)):
-                        self.listeners[lidx].reset_weights()
+                        self.listeners[lidx].reset_weights(whole=True)
                         print("Iterated Learning Scheme: Listener {} have just been resetted.".format(self.listeners[lidx].agent_id))
         
             new_speaker, new_listener = self._select_agents()

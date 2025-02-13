@@ -23,6 +23,7 @@ class SymbolicContinuousStimulusDataset(Dataset) :
         min_nbr_values_per_latent=2, 
         max_nbr_values_per_latent=10, 
         nbr_object_centric_samples=1,
+        use_ohe_latent=False,
         dataset_length=None,
         prototype=None) :
         '''
@@ -33,7 +34,8 @@ class SymbolicContinuousStimulusDataset(Dataset) :
         self.min_nbr_values_per_latent = min_nbr_values_per_latent
         self.max_nbr_values_per_latent = max_nbr_values_per_latent
         self.nbr_object_centric_samples = nbr_object_centric_samples
-        
+        self.use_ohe_latent = use_ohe_latent
+
         self.test_set_divider = 2
 
         self.prototype = prototype
@@ -431,9 +433,17 @@ class SymbolicContinuousStimulusDataset(Dataset) :
         """
         Sample a batch of observations X given a batch of factors Y.
         """
-        obs = torch.from_numpy(
-            self.generate_object_centric_observations(factors),
-        )
+        
+        if self.use_ohe_latent:
+            obs = self.sample_latents_ohe_from_factors(
+                factors=factors,
+                random_state=random_state,
+            )
+            obs = torch.from_numpy(obs)
+        else:
+            obs = torch.from_numpy(
+                self.generate_object_centric_observations(factors),
+            )
         return obs.float()
 
     def sample_latents_values_from_factors(self, factors, random_state=None):
@@ -493,6 +503,9 @@ class SymbolicContinuousStimulusDataset(Dataset) :
         latent_value = torch.from_numpy(self.getlatentvalue(idx)).to(dtype=torch.float32)
         latent_one_hot_encoded = torch.from_numpy(self.getlatentonehot(idx)).to(dtype=torch.float32)
         test_latents_mask = torch.from_numpy(self.gettestlatentmask(idx)).to(dtype=torch.float32)
+
+        if self.use_ohe_latent:
+            stimulus = latent_one_hot_encoded.reshape((1,-1))
 
         if self.transform is not None:
             stimulus = self.transform(stimulus)

@@ -355,6 +355,7 @@ def main():
   parser.add_argument('--scs_min_nbr_values_per_latent', type=int, default=2)
   parser.add_argument('--scs_max_nbr_values_per_latent', type=int, default=3)
   parser.add_argument('--scs_nbr_object_centric_samples', type=int, default=1)
+  parser.add_argument('--scs_use_ohe_latent', type=str2bool, default=False)
   parser.add_argument('--nb_3dshapespybullet_shapes', type=int, default=5)
   parser.add_argument('--nb_3dshapespybullet_colors', type=int, default=8)
   parser.add_argument('--nb_3dshapespybullet_train_colors', type=int, default=6)
@@ -362,6 +363,8 @@ def main():
   parser.add_argument("--arch", type=str, 
     choices=["Dummy",
              "MLP",
+             "BN+MLP",
+             "LN+MLP",
              "BaselineCNN",
              "ShortBaselineCNN",
              "BN+BaselineCNN",
@@ -521,7 +524,10 @@ def main():
   parser.add_argument("--with_DP_in_obverter_decision_head", type=reg_bool, default="False")
   parser.add_argument("--DP_in_obverter_decision_head", type=float, default=0.0)
   parser.add_argument("--with_DP_in_obverter_decision_head_listener_only", type=reg_bool, default="False")
-
+  parser.add_argument("--with_LN_in_listener_only", type=reg_bool, default="False")
+  parser.add_argument("--agent_weight_decay_exceptions", type=str, default="")
+  parser.add_argument("--listener_weight_decay_factor", type=float, default=0.0)
+  parser.add_argument("--speaker_weight_decay_factor", type=float, default=0.0)
   parser.add_argument("--obverter_threshold_to_stop_message_generation", type=float, default=0.95)
   parser.add_argument("--obverter_nbr_games_per_round", type=int, default=20)
   parser.add_argument("--use_obverter_sampling", type=reg_bool, default="False")
@@ -529,7 +535,7 @@ def main():
   parser.add_argument("--obverter_sampling_repeat_experiences", type=reg_bool, default="True")
   # Iterade Learning Model:
   parser.add_argument("--iterated_learning_scheme", type=reg_bool, default="False")
-  parser.add_argument("--iterated_learning_period", type=int, default=4)
+  parser.add_argument("--iterated_learning_period", type=int, default=256)
   parser.add_argument("--iterated_learning_rehearse_MDL", type=reg_bool, default="False")
   parser.add_argument("--iterated_learning_rehearse_MDL_factor", type=float, default=1.0)
   # Cultural Bottleneck:
@@ -1190,9 +1196,14 @@ def main():
       make_VAE(agent_config, args, rg_config)
   elif "MLP" in agent_config["architecture"]:
     if "BN" in args.arch:
-      agent_config["hidden_units"] = ["BN256","BN256",256]
+      agent_config["hidden_units"] = ["BN256","BN256","BN256"]
+      agent_config["cnn_encoder_fc_hidden_units"] = agent_config["hidden_units"] 
+    elif "LN" in args.arch:
+      agent_config["hidden_units"] = ["LN256","LN256","LN256"]
+      agent_config["cnn_encoder_fc_hidden_units"] = agent_config["hidden_units"] 
     else:
       agent_config["hidden_units"] = [256, 256, 256]
+      agent_config["cnn_encoder_fc_hidden_units"] = agent_config["hidden_units"] 
     
     agent_config['non_linearities'] = [nn.LeakyReLU]
 
@@ -1213,7 +1224,6 @@ def main():
     agent_config["cnn_encoder_strides"] = [2,2,2,2]
     agent_config["cnn_encoder_paddings"] = [1,1,1,1]
     agent_config["cnn_encoder_non_linearities"] = [torch.nn.ReLU]
-    agent_config["cnn_encoder_fc_hidden_units"] = agent_config["hidden_units"] 
     # the last FC layer is provided by the cnn_encoder_feature_dim parameter below...
     # For a fair comparison between CNN an VAEs:
     agent_config["cnn_encoder_feature_dim"] = args.vae_nbr_latent_dim
@@ -1231,6 +1241,14 @@ def main():
     agent_config["temporal_encoder_mini_batch_size"] = args.mini_batch_size
     agent_config["symbol_processing_nbr_hidden_units"] = args.symbol_processing_nbr_hidden_units
     agent_config["symbol_processing_nbr_rnn_layers"] = 1
+
+    listener_agent_config = copy.deepcopy(agent_config)
+    speaker_agent_config = agent_config
+    if args.with_LN_in_listener_only:
+        assert "LN" in args.arch
+        speaker_agent_config["hidden_units"] = [256,256,256]
+        speaker_agent_config["cnn_encoder_fc_hidden_units"] = speaker_agent_config["hidden_units"] 
+        
   else:
     raise NotImplementedError
 
@@ -1470,6 +1488,10 @@ def main():
       nbr_stimulus,
       args.scs_nbr_latents,
     ]
+    if args.scs_use_ohe_latent:
+        # TODO: update when not using min=max
+        nbr_dims = args.scs_nbr_latents * args.scs_max_nbr_values_per_latent
+        obs_shape[-1] = nbr_dims
   else:
     obs_shape = [
       nbr_distractors+1,
@@ -1481,6 +1503,9 @@ def main():
 
   vocab_size = rg_config['vocab_size']
   max_sentence_length = rg_config['max_sentence_length']
+
+  agent_config["agent_weight_decay_factor"] = args.speaker_weight_decay_factor
+  agent_config["agent_weight_decay_exceptions"] = args.agent_weight_decay_exceptions
 
   if not args.baseline_only:
       
@@ -1533,7 +1558,7 @@ def main():
     elif 'Baseline' in args.agent_type:
       from ReferentialGym.agents import LSTMCNNSpeaker
       speaker = LSTMCNNSpeaker(
-        kwargs=agent_config, 
+        kwargs=speaker_agent_config, 
         obs_shape=obs_shape, 
         vocab_size=vocab_size, 
         max_sentence_length=max_sentence_length,
@@ -1542,25 +1567,15 @@ def main():
       )
     print("Speaker:", speaker)
 
+    #TODO: maybe split listener and receiver generation altogether
+    # in order to make it easier to parameterise:
     listener_config = copy.deepcopy(agent_config)
+    if args.with_LN_in_listener_only:
+        listener_config = listener_agent_config
+    listener_config["agent_weight_decay_factor"] = args.listener_weight_decay_factor
     if args.shared_architecture:
       listener_config['cnn_encoder'] = speaker.cnn_encoder 
-    listener_config['nbr_distractors'] = rg_config['nbr_distractors']['train']
-    batch_size = 4
-    nbr_distractors = listener_config['nbr_distractors']
-    nbr_stimulus = listener_config['nbr_stimulus']
     
-    obs_shape = [
-      nbr_distractors+1,
-      nbr_stimulus, 
-      rg_config['stimulus_depth_dim'],
-      rg_config['stimulus_resize_dim'],
-      rg_config['stimulus_resize_dim']
-    ]
-
-    vocab_size = rg_config['vocab_size']
-    max_sentence_length = rg_config['max_sentence_length']
-
     if 'obverter' in args.graphtype:
       """
       listener = DifferentiableObverterAgent(
@@ -1634,6 +1649,7 @@ def main():
       nbr_object_centric_samples=args.scs_nbr_object_centric_samples,
       split_strategy=train_split_strategy,
       dataset_length=args.dataset_length if args.dataset_length!=0 else None,
+      use_ohe_latent=args.scs_use_ohe_latent,
     )
     
     test_dataset = ReferentialGym.datasets.SymbolicContinuousStimulusDataset(
@@ -1646,6 +1662,7 @@ def main():
       split_strategy=train_split_strategy,
       dataset_length=args.dataset_length if args.dataset_length!=0 else None,
       prototype=train_dataset,
+      use_ohe_latent=args.scs_use_ohe_latent,
     )
   elif '3DShapesPyBullet' in args.dataset:
     train_dataset = ReferentialGym.datasets._3DShapesPyBulletDataset(

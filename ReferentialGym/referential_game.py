@@ -355,7 +355,7 @@ class ReferentialGame(object):
         if 'batch_size' not in self.config:
             self.config['batch_size'] = 32
         if 'dataloader_num_worker' not in self.config:
-            self.config['dataloader_num_worker'] = 8 
+            self.config['dataloader_num_worker'] = 2 
         
         effective_batch_size = self.config['batch_size']
         from .datasets.dataset import DC_version
