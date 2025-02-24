@@ -1,6 +1,6 @@
 WANDB_CACHE_DIR=./wandb_cache/ python -m ipdb -c c train_wandb.py \
 --project="COMPO+DIS+SYS-DEBUG" \
---seed=11 \
+--seed=21 \
 --use_cuda=True \
 --object_centric_version=2 \
 --descriptive_version=1 \
@@ -12,18 +12,22 @@ WANDB_CACHE_DIR=./wandb_cache/ python -m ipdb -c c train_wandb.py \
 --shared_architecture=False \
 --with_LN_in_listener_only=False \
 --iterated_learning_scheme=True \
---iterated_learning_period=128 \
---agent_weight_decay_exceptions="tau_fc,not_target_logit" \
+--iterated_learning_period=64 \
 --listener_weight_decay_factor=0.0 \
 --speaker_weight_decay_factor=0.0 \
---add_descriptive_test=False \
+--agent_weight_decay_exceptions="tau_fc,not_target_logit" \
+--add_descriptive_test=True \
 --add_discriminative_test=False --nbr_discriminative_test_distractors=7 \
 --agent_loss_type=Impatient+Hinge --agent_nbr_latent_dim=32 \
 --arch="MLP" --baseline_only=False \
 --lr=0.0005 --weight_decay=0.0 \
---logits_mdl_principle_factor=0.0 \
+--with_logits_mdl_principle=True \
+--logits_mdl_principle_factor="0.0" \
 --logits_mdl_principle_use_inst_accuracy=True \
---logits_mdl_principle_accuracy_threshold=70 \
+--logits_mdl_principle_accuracy_threshold=0 \
+--logits_mdl_principle_normalization=True \
+--logits_mdl_principle_entr_reg_factor="10.0" \
+--logits_mdl_principle_entr_reg_masking=False \
 --nbr_experience_repetition=1 --batch_size=128 \
 --dataset=SCS --dataset_length=0 \
 --scs_use_ohe_latent=True \
@@ -54,7 +58,7 @@ WANDB_CACHE_DIR=./wandb_cache/ python -m ipdb -c c train_wandb.py \
 --with_BN_in_obverter_decision_head=False --with_DP_in_obverter_decision_head=False \
 --with_baseline=False --with_color_jitter_augmentation=False \
 --with_gaussian_blur_augmentation=False \
---with_classification_test=False --classification_test_nbr_class=10 \
+--with_classification_test=True --classification_test_nbr_class=16 \
 --classification_test_loss_lambda=1.0 --with_attached_classification_heads=False \
 --use_aitao=False --use_priority=False \
 --aitao_max_similarity_ratio=10.0 \

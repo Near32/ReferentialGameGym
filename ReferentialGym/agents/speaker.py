@@ -181,6 +181,7 @@ def logits_mdl_principle_loss_hook(
     config = input_streams_dict["config"]
     mode = input_streams_dict['mode']
     batch_size = len(input_streams_dict["experiences"])
+    max_sentence_length = agent.max_sentence_length
 
     arange_token = torch.arange(config["max_sentence_length"])
     arange_token = (config["vocab_size"]*arange_token).float().view((1,-1)).repeat(batch_size,1)
@@ -194,6 +195,7 @@ def logits_mdl_principle_loss_hook(
     '''
 
     kl_logits_EoS = []
+    padded_sentences_logits = []
     pad = -np.inf*torch.ones((1, config['vocab_size'])).to(arange_token.device)
     pad[:,agent.vocab_stop_idx] = 0.0
     for sl in outputs_dict['sentences_logits']:
@@ -203,6 +205,8 @@ def logits_mdl_principle_loss_hook(
         if sl.shape[0] < agent.max_sentence_length:
             n_pads = agent.max_sentence_length-sl.shape[0]
             sl = torch.cat([sl]+[pad]*n_pads, dim=0)
+        # entropy computation (expect unnormalised true logits)
+        padded_sentences_logits.append(sl.reshape((1,max_sentence_length,-1)))
         eos_kl_sl = -sl[:, agent.vocab_stop_idx]
         kl_logits_EoS.append(eos_kl_sl)
     kl_logits_EoS = torch.stack(kl_logits_EoS, dim=0)
@@ -215,10 +219,14 @@ def logits_mdl_principle_loss_hook(
     # (batch_size x max_sentence_length)
     mdl_loss = (arange_token*kl_logits_EoS).mean(dim=-1)
     # (batch_size, )
-    
     #running_accuracy = input_streams_dict['running_accuracy']
     inst_train_accuracy= logs_dict[f'{mode}/repetition{it_rep}/comm_round{it_comm_round}/referential_game_accuracy']
-    running_accuracy = input_streams_dict['running_test_accuracy']
+    
+    if agent.kwargs.get("use_test_accuracy", False):
+        running_accuracy = input_streams_dict['running_test_accuracy']
+    else:
+        running_accuracy = input_streams_dict['running_train_accuracy']
+
     wandb.log({f"MDL/Loss": mdl_loss.cpu().detach().mean().item()}, commit=False)
     wandb.log({f"MDL/RunningAcc": running_accuracy}, commit=False)
     if agent.kwargs['logits_mdl_principle_use_inst_accuracy']:
@@ -228,14 +236,16 @@ def logits_mdl_principle_loss_hook(
     accuracy_mask = accuracy_masking > config['logits_mdl_principle_accuracy_threshold']
     if config['logits_mdl_principle_normalization']:
         mdl_loss /= 1e-5+mdl_loss.detach().max().item()
-    masked_mdl_loss = accuracy_mask * mdl_loss
+    masked_mdl_loss = accuracy_mask.to(mdl_loss.device) * mdl_loss
     #wandb.log({f"MDL/RegLoss": mdl_loss.cpu().detach().mean().item()}, commit=True)
     factor = config["logits_mdl_principle_factor"]
     if isinstance(factor, str):
         if '-' in factor and 'e-' not in factor:
             betas = [float(beta) for beta in factor.split('-')]
             assert len(betas) == 2
-            factor = np.power(running_accuracy/100.0, betas[0])/betas[1]
+            # TODO: figure out whether using test accuracy is relevant
+            #factor = np.power(running_accuracy/100.0, betas[0])/betas[1]
+            factor = np.power(accuracy_masking.mean().item()/100.0, betas[0])/betas[1]
             wandb.log({
                 f"MDL/Beta1": betas[0],
                 f"MDL/Beta2": betas[1],
@@ -254,6 +264,47 @@ def logits_mdl_principle_loss_hook(
         masked_mdl_loss
     ]   
 
+    if config['logits_mdl_principle_entr_reg_factor'] != "0.0":
+        #EoS-masked Entropy Loss:
+        padded_sentences_logits = torch.cat(padded_sentences_logits, dim=0)
+        #( batch_size, max_sentence_length, vocab_size)
+        per_token_entropies = torch.distributions.categorical.Categorical(
+            logits=padded_sentences_logits,
+        ).entropy().reshape((batch_size, max_sentence_length))
+        # masking:
+        if config['logits_mdl_principle_entr_reg_masking']:
+            eos_mask = (agent.vocab_stop_idx != outputs_dict['sentences_widx'])
+            eos_mask = eos_mask.detach().reshape((batch_size, max_sentence_length))
+            masked_entropies = eos_mask* per_token_entropies
+            entropy_loss = (-1)*masked_entropies.sum(dim=-1)/(eos_mask.sum(dim=-1)+1e-5)
+        else:
+            entropy_loss = (-1) * per_token_entropies.mean(dim=-1)
+        # (batch_size, )
+        factor = config["logits_mdl_principle_entr_reg_factor"]
+        if isinstance(factor, str):
+            if '-' in factor and 'e-' not in factor:
+                betas = [float(beta) for beta in factor.split('-')]
+                assert len(betas) == 2
+                # TODO: figure out whether using test accuracy is relevant
+                #factor = np.power(running_accuracy/100.0, betas[0])/betas[1]
+                factor = np.power(accuracy_masking.mean().item()/100.0, betas[0])/betas[1]
+                wandb.log({
+                    f"MDL/EntrReg/Beta1": betas[0],
+                    f"MDL/EntrReg/Beta2": betas[1],
+                    }, 
+                    commit=False,
+                )
+            else:
+                factor = float(factor)
+        else:
+            factor = float(factor)
+
+        wandb.log({f"MDL/EntrReg/Lambda": factor}, commit=False)
+        losses_dict[f"repetition{it_rep}/comm_round{it_comm_round}/logits_mdl_masked_entropy_loss"] = [
+            factor, 
+            entropy_loss,
+        ]   
+     
     return
 
 

@@ -99,6 +99,7 @@ class SymbolicContinuousStimulusDataset(Dataset) :
         if self.prototype is not None:
             assert not(self.train)
             self.indices = [idx for idx in range(self.dataset_size) if idx not in self.prototype.indices]
+            self.traintest_indices = copy.deepcopy(self.prototype.traintest_indices)
             print(f"Split Strategy: {self.split_strategy}")
             print(f"Dataset Size: {len(self.indices)} out of {self.dataset_size} : {100*len(self.indices)/self.dataset_size}%.")
 
@@ -184,6 +185,17 @@ class SymbolicContinuousStimulusDataset(Dataset) :
             latent_class = np.array(coord)
             self.latents_classes.append(latent_class)
         self.latents_classes = np.asarray(self.latents_classes)
+        
+        self.nbr_attributes_per_latent_dimension = {}
+        for attr_id in range(self.latents_classes.shape[1]):
+            values = set(self.latents_classes[:,attr_id]) 
+            self.nbr_attributes_per_latent_dimension[attr_id] = {
+                'size': len(values),
+                'values': list(values),
+            }
+        
+        print("Dataset : nbr of attributes per latent:", self.nbr_attributes_per_latent_dimension)
+
         print('Dataset loaded : OK.')
     
     def reset(self):

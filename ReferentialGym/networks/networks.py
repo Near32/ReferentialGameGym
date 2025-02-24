@@ -71,15 +71,13 @@ def l2_reg(cum_loss_dict, module):
         cum_loss_dict[name] = torch.norm(param, p=2)
 
 def layer_init(layer, w_scale=1.0):
-    return layer 
-
     for name, param in layer._parameters.items():
         if param is None or param.data is None: continue
         if 'bias' in name:
             #layer._parameters[name].data.fill_(0.0)
             layer._parameters[name].data.uniform_(-0.08,0.08)
         else:
-            #nn.init.orthogonal_(layer._parameters[name].data)
+            nn.init.orthogonal_(layer._parameters[name].data)
             '''
             fanIn = param.size(0)
             fanOut = param.size(1)
@@ -93,8 +91,8 @@ def layer_init(layer, w_scale=1.0):
             layer._parameters[name].data.uniform_(-0.08,0.08)
             layer._parameters[name].data.mul_(w_scale)
             '''
-            if len(layer._parameters[name].size()) > 1:
-                nn.init.kaiming_normal_(layer._parameters[name], mode="fan_out", nonlinearity='leaky_relu')
+            #if len(layer._parameters[name].size()) > 1:
+            #    nn.init.kaiming_normal_(layer._parameters[name], mode="fan_out", nonlinearity='leaky_relu')
             
     '''
     if hasattr(layer,"weight"):    

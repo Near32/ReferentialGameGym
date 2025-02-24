@@ -495,8 +495,10 @@ def main():
   parser.add_argument("--egocentric_prob", type=float, default=0.0)
   parser.add_argument("--with_logits_mdl_principle", type=reg_bool, default="False")
   parser.add_argument("--logits_mdl_principle_normalization", type=str2bool, default=False)
+  parser.add_argument("--logits_mdl_principle_entr_reg_factor", type=str, default=0.0)
+  parser.add_argument("--logits_mdl_principle_entr_reg_masking", type=str2bool, default=False)
   parser.add_argument("--logits_mdl_principle_use_inst_accuracy", type=str2bool, default=False)
-  parser.add_argument("--logits_mdl_principle_factor", type=float, default=0.0)#1.0e-3)
+  parser.add_argument("--logits_mdl_principle_factor", type=str, default=0.0)#1.0e-3)
   parser.add_argument("--logits_mdl_principle_accuracy_threshold", type=float, help='in percent.', default=10.0)
   parser.add_argument("--distractor_sampling", type=str,
     choices=[ "uniform",
@@ -634,10 +636,10 @@ def main():
   #if 'EncoderOnly' not in args.arch:
   #    args.epoch = 11 
   
-  if args.logits_mdl_principle_factor > 0.0:
-      args.with_logits_mdl_principle = True
-  else:
-      args.with_logits_mdl_principle = False
+  #if args.logits_mdl_principle_factor > 0.0:
+  #    args.with_logits_mdl_principle = True
+  #else:
+  #    args.with_logits_mdl_principle = False
 
   if args.use_object_centric_curriculum:
       args.object_centric = True 
@@ -916,6 +918,8 @@ def main():
       "logits_mdl_principle_normalization":     args.logits_mdl_principle_normalization,
       "logits_mdl_principle_use_inst_accuracy":     args.logits_mdl_principle_use_inst_accuracy,
       "logits_mdl_principle_factor":       args.logits_mdl_principle_factor,
+      "logits_mdl_principle_entr_reg_factor":       args.logits_mdl_principle_entr_reg_factor,
+      "logits_mdl_principle_entr_reg_masking":       args.logits_mdl_principle_entr_reg_masking,
       "logits_mdl_principle_accuracy_threshold":       args.logits_mdl_principle_accuracy_threshold,
       "with_mdl_principle":       False,
       "mdl_principle_factor":     5e-2,
@@ -1867,7 +1871,8 @@ def main():
     nbr_attributes = getattr(
         train_dataset, 
         "nbr_attributes_per_latent_dimension",
-        [args.classification_test_nbr_class if args.classification_test_nbr_class!=0 else 15 for _ in range(train_dataset.latents_classes.shape[1])],
+        {attridx:args.classification_test_nbr_class if args.classification_test_nbr_class!=0 else 15 
+            for attridx in range(train_dataset.latents_classes.shape[1])},
     )
 
     if args.with_attached_classification_heads:
